@@ -1,0 +1,119 @@
+<svg viewBox="0 0 940 790" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <style>
+      .title { fill: #1a1a2e; font-weight: 700; }
+      .sub { fill: #555; }
+      .box-label { fill: #1a1a2e; font-weight: 600; }
+      .item { fill: #444; }
+      .badge-txt { fill: #fff; font-weight: 700; }
+      .flow { stroke: #9aa0b4; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .flow-back { stroke: #2EB67D; stroke-width: 2; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrowg); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9aa0b4"/>
+    </marker>
+    <marker id="arrowg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2EB67D"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="790" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="470" y="32" text-anchor="middle" font-size="20" class="title">Crisis Resource Navigator — Architecture</text>
+  <text x="470" y="54" text-anchor="middle" font-size="13" class="sub">Use case: Exmouth, isolated by Severe Tropical Cyclone Narelle (Mar 2026) — only sealed road cut, power &amp; water down</text>
+
+  <!-- Layer 1: Slack Agent Surface -->
+  <rect x="220" y="80" width="500" height="92" rx="10" fill="#ffffff" stroke="#611f69" stroke-width="2"/>
+  <rect x="220" y="80" width="500" height="26" rx="10" fill="#611f69"/>
+  <rect x="220" y="93" width="500" height="13" fill="#611f69"/>
+  <text x="470" y="98" text-anchor="middle" font-size="13" class="badge-txt">1 · SLACK AGENT SURFACE</text>
+  <text x="240" y="126" font-size="12.5" class="item">Community member / volunteer posts a need in the agent thread:</text>
+  <rect x="240" y="134" width="460" height="30" rx="6" fill="#f3eef4"/>
+  <text x="252" y="153" font-size="12" class="item" font-style="italic">"Family of 4, North Exmouth, no power — need water + a generator. Learmonth Rd cut."</text>
+
+  <path class="flow" d="M470,172 L470,198"/>
+
+  <!-- Layer 2: Agent core -->
+  <rect x="170" y="200" width="600" height="118" rx="10" fill="#ffffff" stroke="#1264a3" stroke-width="2.5"/>
+  <rect x="170" y="200" width="600" height="26" rx="10" fill="#1264a3"/>
+  <rect x="170" y="213" width="600" height="13" fill="#1264a3"/>
+  <text x="470" y="218" text-anchor="middle" font-size="13" class="badge-txt">2 · CRISIS NAVIGATOR AGENT — Slack AI capabilities (reasoning core)</text>
+  <rect x="186" y="238" width="135" height="64" rx="7" fill="#eaf2f9"/>
+  <text x="253" y="264" text-anchor="middle" font-size="12" class="box-label">Parse</text>
+  <text x="253" y="282" text-anchor="middle" font-size="10.5" class="item">need · location ·</text>
+  <text x="253" y="295" text-anchor="middle" font-size="10.5" class="item">urgency · size</text>
+
+  <rect x="331" y="238" width="135" height="64" rx="7" fill="#eaf2f9"/>
+  <text x="398" y="264" text-anchor="middle" font-size="12" class="box-label">Plan</text>
+  <text x="398" y="282" text-anchor="middle" font-size="10.5" class="item">select tools,</text>
+  <text x="398" y="295" text-anchor="middle" font-size="10.5" class="item">query both sources</text>
+
+  <rect x="476" y="238" width="135" height="64" rx="7" fill="#eaf2f9"/>
+  <text x="543" y="264" text-anchor="middle" font-size="12" class="box-label">Rank &amp; compose</text>
+  <text x="543" y="282" text-anchor="middle" font-size="10.5" class="item">match offers to</text>
+  <text x="543" y="295" text-anchor="middle" font-size="10.5" class="item">need, cite sources</text>
+
+  <rect x="621" y="238" width="133" height="64" rx="7" fill="#fdf0e6" stroke="#e8912d" stroke-width="1.5"/>
+  <text x="687" y="260" text-anchor="middle" font-size="12" class="box-label">Bounded</text>
+  <text x="687" y="275" text-anchor="middle" font-size="12" class="box-label">autonomy</text>
+  <text x="687" y="293" text-anchor="middle" font-size="10.5" class="item">human confirms</text>
+
+  <path class="flow" d="M300,318 L250,362"/>
+  <path class="flow" d="M640,318 L690,362"/>
+
+  <!-- Layer 3 left: RTS -->
+  <rect x="40" y="364" width="380" height="140" rx="10" fill="#ffffff" stroke="#2EB67D" stroke-width="2"/>
+  <rect x="40" y="364" width="380" height="26" rx="10" fill="#2EB67D"/>
+  <rect x="40" y="377" width="380" height="13" fill="#2EB67D"/>
+  <text x="230" y="382" text-anchor="middle" font-size="12.5" class="badge-txt">3 · REAL-TIME SEARCH API → in-workspace context</text>
+  <text x="58" y="410" font-size="11.5" class="item">• Prior offers already posted ("I have a spare generator")</text>
+  <text x="58" y="430" font-size="11.5" class="item">• Shire / SES coordinator updates &amp; official notices</text>
+  <text x="58" y="450" font-size="11.5" class="item">• Previously resolved cases (reuse what worked)</text>
+  <text x="58" y="470" font-size="11.5" class="item">• Evac-centre status posted by locals</text>
+  <text x="58" y="491" font-size="11" class="sub" font-style="italic">Self-maintaining: no wiki to curate — the workspace IS the memory</text>
+
+  <!-- Layer 3 right: MCP -->
+  <rect x="520" y="364" width="380" height="140" rx="10" fill="#ffffff" stroke="#1264a3" stroke-width="2"/>
+  <rect x="520" y="364" width="380" height="26" rx="10" fill="#1264a3"/>
+  <rect x="520" y="377" width="380" height="13" fill="#1264a3"/>
+  <text x="710" y="382" text-anchor="middle" font-size="12.5" class="badge-txt">4 · MCP SERVERS → external directories</text>
+  <text x="538" y="410" font-size="11.5" class="item">• Emergency WA / DFES warnings &amp; advice</text>
+  <text x="538" y="430" font-size="11.5" class="item">• Main Roads WA — live road closures</text>
+  <text x="538" y="450" font-size="11.5" class="item">• Bureau of Meteorology cyclone &amp; flood feeds</text>
+  <text x="538" y="470" font-size="11.5" class="item">• Evac-centre capacity · 211-style service listings</text>
+  <text x="538" y="491" font-size="11" class="sub" font-style="italic">Live external data the workspace doesn't already contain</text>
+
+  <path class="flow" d="M250,364 L300,320"/>
+  <path class="flow" d="M690,364 L640,320"/>
+
+  <path class="flow" d="M470,318 L470,524"/>
+
+  <!-- Layer 4: Block Kit response -->
+  <rect x="170" y="526" width="600" height="152" rx="10" fill="#ffffff" stroke="#611f69" stroke-width="2"/>
+  <rect x="170" y="526" width="600" height="26" rx="10" fill="#611f69"/>
+  <rect x="170" y="539" width="600" height="13" fill="#611f69"/>
+  <text x="470" y="544" text-anchor="middle" font-size="13" class="badge-txt">5 · BLOCK KIT RESPONSE (in-thread)</text>
+  <text x="186" y="570" font-size="12" class="item">Ranked matches — each with <tspan font-weight="700">source + timestamp</tspan> + "verify before relying" note</text>
+
+  <rect x="186" y="582" width="270" height="84" rx="7" fill="#f3eef4"/>
+  <text x="198" y="602" font-size="11" class="box-label">Local match (via RTS)</text>
+  <text x="198" y="620" font-size="10.5" class="item">Jo R. offered a generator 2h ago,</text>
+  <text x="198" y="634" font-size="10.5" class="item">~3km away in town.</text>
+  <text x="198" y="654" font-size="10.5" class="sub" font-style="italic">[ Connect me ]  [ Mark resolved ]</text>
+
+  <rect x="470" y="582" width="284" height="84" rx="7" fill="#f3eef4"/>
+  <text x="482" y="602" font-size="11" class="box-label">Official info (via MCP)</text>
+  <text x="482" y="620" font-size="10.5" class="item">Murat Rd reopened 1 lane; water</text>
+  <text x="482" y="634" font-size="10.5" class="item">point at rec centre (DFES, 40m ago).</text>
+  <text x="482" y="654" font-size="10.5" class="sub" font-style="italic">[ Escalate to coordinator ]  [ Log ]</text>
+
+  <!-- feedback loop -->
+  <path class="flow-back" d="M770,564 C 880,540 890,300 745,165 C 730,151 710,150 690,150"/>
+  <text x="892" y="360" text-anchor="middle" font-size="10.5" class="sub" transform="rotate(90 892 360)">resolved cases feed back into RTS</text>
+
+  <!-- coordinator canvas -->
+  <rect x="40" y="706" width="860" height="58" rx="8" fill="#fdf0e6" stroke="#e8912d" stroke-width="1.2"/>
+  <text x="58" y="729" font-size="12" class="box-label">Coordinator Canvas + audit log:</text>
+  <text x="58" y="748" font-size="11.5" class="item">live board of open / matched / resolved needs · every agent action logged with its source — accountability + bounded autonomy for a high-stakes setting</text>
+</svg>
