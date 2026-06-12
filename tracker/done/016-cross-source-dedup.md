@@ -328,3 +328,9 @@ button trace               → ConnectPayload(offer_id=fde848c7-…) → mark_re
 **VERDICT: PASS**
 (AC5 is `[HUMAN]` — left unchecked, awaiting the human's live sandbox re-run; all
 machine-verifiable criteria pass.)
+
+### [Orchestrator] 2026-06-12 23:50 — AC5 deferred
+Live re-run needs a human-typed offer+need pair (API-posted messages carry the
+app's bot_id and are guard-filtered). Tester verified the collapse end-to-end
+in-process including real block composition; live confirmation folds into the
+013 seeding session.

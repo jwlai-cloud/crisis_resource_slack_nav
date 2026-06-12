@@ -350,3 +350,10 @@ unknown bot id and never over-blocks different-user mentions; the DM path is unt
 The new regression test is genuine (red without the guard). Full suite green, zero
 warnings. Only AC8 ([HUMAN], live sandbox) remains outstanding. Hand off to PM for
 acceptance review.
+
+### [Human+Orchestrator] 2026-06-12 23:45 — AC8 live verification (PASS)
+All three passive flows verified in #exmouth-mutual-aid (C0BA6LCKK42): plain offer
+-> threaded INDEXED ack; plain need -> one threaded reply with parse fields + match
+cards; chatter -> deliberate silence (log: "Passive listen ... nothing to answer").
+Side discovery: messages posted via the app's user token carry the app's bot_id and
+are correctly ignored by the bot-loop guard — live tests must be human-typed.
