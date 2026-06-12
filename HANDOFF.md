@@ -30,9 +30,14 @@ live testing. Gemini now runs via Vertex AI express mode (no free-tier caps). St
 https://github.com/jwlai-cloud/crisis_resource_slack_nav/pull/1. W3 done (2026-06-12, same day): tasks 008-010 — mock MCP servers (FastMCP, stdio,
 Narelle scenario feeds with structured degraded states), Connect / Mark resolved /
 Not relevant action buttons (group DM intro, index locking, audit-trail seed), and
-match-card visual parity with the landing page. All live-verified. Backlog groomed:
-006/007/011/012/013/014. Next: **W4 — coordinator Canvas + situation board,
-persistence decision (statuses + audit), seed data via task 013, polish.**
+match-card visual parity with the landing page. All live-verified. Same evening:
+backlog tasks 006 (passive listening in #exmouth-mutual-aid, live-verified incl.
+chatter silence), 014 (need-echo filter), 015 (dismissal memory), and 016
+(index/RTS twin dedup via ts-identity) all shipped — 259 tests. Remaining backlog:
+007, 011, 012 (Canvas + situation board), 013 (seed data; needs the Mara alias
+invited and human-typed seed posts — API-posted messages carry the app's bot_id
+and are guard-filtered). Next: **W4 — Canvas/situation board + persistence
+decision (statuses + audit) + seeding.**
 
 ## Artifacts in the repo
 
