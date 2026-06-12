@@ -137,6 +137,7 @@ Slack CLI (v4.2.0, installed at `~/.local/bin/slack`):
 - `slack auth list` — verify auth. Logged into the `crisis-resource-nav` sandbox org (Team `E0B9Z77AX2R`).
 - `slack manifest validate` — check `manifest.json` after editing scopes/events.
 - `.env` needs `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) — pydantic-ai picks the model in `agent/agent.py:get_model()`.
+- `CRISIS_CHANNEL` (optional, channel id; empty/unset = off) — enables passive listening (parse every top-level message, ack offers / answer needs) in that one channel only; everywhere else stays mention-gated (ADR-0004).
 
 ## Step-by-Step Verification
 
