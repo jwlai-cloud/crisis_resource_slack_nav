@@ -122,7 +122,9 @@ def get_model() -> str:
     elif os.environ.get("OPENAI_API_KEY"):
         _cached_model = "openai:gpt-4.1-mini"
     elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-        _cached_model = "google:gemini-2.5-flash"
+        # Override with e.g. GEMINI_MODEL=gemini-2.5-flash-lite when the free-tier
+        # daily quota for the default model is exhausted (separate per-model pools).
+        _cached_model = f"google:{os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')}"
     else:
         raise RuntimeError(
             "No AI provider configured. "
