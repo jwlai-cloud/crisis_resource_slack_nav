@@ -1,17 +1,32 @@
-# Secrets
-.env
+# Secrets / environment
+.env*
+!.env.example
 
 # Python
 .venv/
+venv/
+env*/
 __pycache__/
-*.pyc
-dist/
+*.py[cod]
+*.egg
+*.egg-info/
+.mypy_cache/
 .pytest_cache/
 .ruff_cache/
+dist/
+build/
 
-# OS
+# Logs
+logs/
+
+# OAuth local store (app_oauth.py)
+data/
+
+# OS / editors
 .DS_Store
+.idea/
 
-# Slack CLI local state — verify exact paths after `slack create agent`
-# (the template ships its own .gitignore entries; merge them here)
-.slack/cache/
+# Claude Code local settings
+.claude/*.local.json
+
+# Slack CLI internals (`.slack/` ships its own .gitignore for apps.dev.json etc.)

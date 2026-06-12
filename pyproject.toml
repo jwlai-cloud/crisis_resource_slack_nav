@@ -10,9 +10,13 @@ authors = [
 ]
 
 # Runtime deps only. Dev/test go in [dependency-groups].
-# If `slack create agent` ships a requirements.txt, migrate it here via `uv add` (W1).
+# Migrated from the `bolt-python-starter-agent --subdir pydantic-ai` template (W1).
 dependencies = [
-    "slack-bolt>=1.21",
+    "slack-sdk>=3.42",
+    "slack-bolt>=1.28",
+    "slack-cli-hooks<1.0.0",
+    "pydantic-ai[anthropic,openai]",
+    "python-dotenv>=1.2",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
 ]
