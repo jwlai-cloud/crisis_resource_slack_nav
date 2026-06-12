@@ -190,3 +190,11 @@ SKIPPED [1] tests/integration/agent/test_parsing_live.py:30: no live provider ke
 - PASS with note (typing): `compose_reply` (`listeners/reply.py`) and `run_agent` (`agent/agent.py`) have unannotated signatures. CLAUDE.md says "type-annotate everything," but ruff's lint set does not select `ANN`, `run_agent` was already untyped at HEAD (this task only added the `recall_context` param in the existing style), and the listener handlers it sits between are pre-existing untyped glue. All NEW pure logic (`NeedRecall`, `serialize_recall_context`, `_contact_line`, `route_message`) IS fully annotated. Pre-existing codebase-wide convention deviation, not introduced/worsened by 005 — recommend a follow-up task to annotate `run_agent`/`compose_reply`/the handlers, not a 005 blocker.
 
 **VERDICT: PASS** (all 5 non-[HUMAN] ACs verified with code + test + e2e evidence; full suite green, 0 warnings; e2e adversarial pass green on every break path; all four guardrails re-checked; 004 offer-ack path survives. AC6 awaits human live verification.)
+
+### [Human] 2026-06-12 18:37 — AC6 live verification (PASS)
+Channel mention need ("baby formula in Exmouth town"): one threaded reply opening
+with the requester mention; honest no-prior-offers; clarifying questions for the
+missing parse fields; muted ack reaction. Earlier rounds in this verification
+found and fixed: Vertex event-loop binding, agent-echo matches (bot-author +
+bot-mention filters), location-only false matches (resource-token overlap now
+required), small-model output retries.
