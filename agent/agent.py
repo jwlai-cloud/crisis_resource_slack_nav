@@ -3,6 +3,7 @@ import os
 
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
+from pydantic_ai.models import Model
 
 from agent.deps import AgentDeps
 from agent.tools import add_emoji_reaction
@@ -129,13 +130,30 @@ relevant to a need. When you surface anything you found this way, carry its sour
 
 logger = logging.getLogger(__name__)
 
-_cached_model: str | None = None
+_cached_model: "str | Model | None" = None
 
 
-def get_model() -> str:
+def _vertex_model() -> "Model":
+    """Gemini through Vertex AI express mode (project-billed, no free-tier caps)."""
+    import warnings
+
+    from pydantic_ai.models.google import GoogleModel
+    from pydantic_ai.providers.google import GoogleProvider
+
+    name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    with warnings.catch_warnings():
+        # GoogleProvider(vertexai=True) is deprecated in favour of
+        # GoogleCloudProvider, which doesn't exist yet in pydantic-ai 1.107.
+        # Their warning class subclasses UserWarning, not DeprecationWarning.
+        warnings.simplefilter("ignore", UserWarning)
+        provider = GoogleProvider(api_key=os.environ["GOOGLE_VERTEX_API_KEY"], vertexai=True)
+    return GoogleModel(name, provider=provider)
+
+
+def get_model() -> "str | Model":
     """Select the AI model based on available API keys.
 
-    Preference order: Anthropic, OpenAI, Gemini.
+    Preference order: Anthropic, OpenAI, Gemini via Vertex, Gemini free tier.
     """
     global _cached_model
     if _cached_model is not None:
@@ -145,14 +163,16 @@ def get_model() -> str:
         _cached_model = "anthropic:claude-sonnet-4-6"
     elif os.environ.get("OPENAI_API_KEY"):
         _cached_model = "openai:gpt-4.1-mini"
+    elif os.environ.get("GOOGLE_VERTEX_API_KEY"):
+        _cached_model = _vertex_model()
     elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         # Override with e.g. GEMINI_MODEL=gemini-2.5-flash-lite when the free-tier
         # daily quota for the default model is exhausted (separate per-model pools).
         _cached_model = f"google:{os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')}"
     else:
         raise RuntimeError(
-            "No AI provider configured. "
-            "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in your environment."
+            "No AI provider configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, "
+            "GOOGLE_VERTEX_API_KEY, or GEMINI_API_KEY in your environment."
         )
     return _cached_model
 
