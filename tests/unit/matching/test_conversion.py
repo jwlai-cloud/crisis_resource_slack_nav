@@ -51,3 +51,14 @@ def test_match_from_offer_uses_synthetic_provenance_and_no_permalink(
 
     assert match.channel == INDEX_SOURCE_CHANNEL
     assert match.permalink == ""
+
+
+def test_match_from_offer_carries_offer_id(
+    make_offer: Callable[..., Offer],
+) -> None:
+    """The index offer id rides through as a string so handlers can resolve it."""
+    offer = make_offer()
+
+    match = match_from_offer(offer)
+
+    assert match.offer_id == str(offer.id)

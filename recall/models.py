@@ -46,6 +46,12 @@ class RecallMatch(BaseModel):
     channel_id: str
     ts: datetime
     permalink: str
+    # The in-memory index id of the originating offer, as a string, when this match
+    # came from the matching index; empty for an RTS-only hit (which links to the
+    # workspace via ``permalink`` instead). The action-button handlers use it to
+    # resolve the offer in the index on a Mark-resolved click. Optional and default
+    # empty so RTS-sourced matches construct unchanged.
+    offer_id: str = ""
 
     _validate_ts = field_validator("ts")(_ensure_aware_utc)
 

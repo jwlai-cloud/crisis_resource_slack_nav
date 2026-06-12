@@ -59,3 +59,16 @@ optimisation layered over that durable store, never a replacement for it.
   the design doc asks. If a future requirement needs durable matching state
   (e.g. the coordinator Canvas surviving restarts, W4), that is a new fork with
   its own ADR; we do not pre-build it here.
+
+## Status note (2026-06-12, task 010)
+
+The "Not thread-safe" revisit trigger **fired**. Task 010 wired the Connect /
+Mark resolved action buttons, which mutate the index (`mark_matched` /
+`mark_resolved` — a non-atomic get -> `model_copy` -> set) from Bolt's thread
+pool, so concurrent transitions could lose a write. Resolved with the **minimal**
+response named here: a `threading.Lock` in `OfferIndex` now guards every access to
+the backing dict (`matching/index.py`). This keeps the single-process in-memory
+design intact — **supersession (an external store) is not needed** for the
+single-process socket-mode demo. The remaining triggers (multi-process, durable
+matching state) still stand for a future ADR. Decision unchanged; this is a
+hardening note, not a new decision.

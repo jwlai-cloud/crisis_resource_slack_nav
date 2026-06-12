@@ -20,7 +20,9 @@ block structure can be snapshot/asserted in unit tests without a live Slack call
 from datetime import datetime
 
 from slack_sdk.models.blocks import (
+    ActionsBlock,
     Block,
+    ButtonElement,
     ContextBlock,
     DividerBlock,
     HeaderBlock,
@@ -30,12 +32,29 @@ from slack_sdk.models.blocks import (
 )
 
 from recall.models import RecallError, RecallMatch
+from recall.payload import ConnectPayload
 
 VERIFY_NOTE = "Verify before relying on this."
 
+# Action ids for the bounded-autonomy confirmation buttons (task 010). The match
+# card offers Connect / Not relevant; a connected card swaps in Mark resolved. The
+# handlers in ``listeners.actions`` register against exactly these ids.
+ACTION_CONNECT = "crisis_connect"
+ACTION_NOT_RELEVANT = "crisis_not_relevant"
+ACTION_RESOLVE = "crisis_resolve"
+
+# Button block id prefix so a handler can locate the card's action row when it
+# rewrites the buttons (Connect -> Mark resolved, or -> Dismissed). One row per
+# rendered match, suffixed with the match index.
+ACTIONS_BLOCK_PREFIX = "crisis_actions_"
+
+_CONNECT_LABEL = "Connect me"
+_NOT_RELEVANT_LABEL = "Not relevant"
+
 _HEADER = "Prior offers from this workspace"
 
-# Slack caps messages at 50 blocks; each match renders ~3 blocks + divider.
+# Slack caps messages at 50 blocks; each match renders section+context+actions
+# (3 blocks) plus a divider, so 5 matches stays well under the cap.
 _MAX_RENDERED_MATCHES = 5
 _NO_MATCHES = (
     "I found *no prior offers* in this workspace for that need yet. "
@@ -77,8 +96,57 @@ def _contact_line(match: RecallMatch) -> str | None:
     return f"Contact: <@{match.author_id}>"
 
 
-def _match_blocks(match: RecallMatch) -> list[Block]:
-    """The blocks for a single match: snippet, then its source+timestamp+contact+verify line."""
+def _button_value(match: RecallMatch) -> str:
+    """Serialise the match identity onto the action buttons' shared ``value``.
+
+    Carries the offerer (always), the index ``offer_id`` (for an index hit, so the
+    resolve handler can ``mark_resolved`` it), the ``permalink`` (for an RTS-only
+    hit, so the intro can cite the original message), and a short snippet. The
+    requester is deliberately *not* here — it is the human who clicks.
+    """
+    return ConnectPayload(
+        offerer_id=match.author_id,
+        offer_id=match.offer_id,
+        permalink=match.permalink,
+        snippet=match.text,
+    ).to_value()
+
+
+def _match_action_block(match: RecallMatch, index: int) -> ActionsBlock:
+    """The bounded-autonomy confirmation row for one match: Connect / Not relevant.
+
+    Both buttons carry the same match-identity ``value`` (the handler reads the
+    fields it needs). Nothing fires automatically — a button is the human's
+    confirmation step (guardrail 1). The block id is stable+unique per rendered
+    match so a handler can rewrite this exact row after a click.
+    """
+    value = _button_value(match)
+    return ActionsBlock(
+        block_id=f"{ACTIONS_BLOCK_PREFIX}{index}",
+        elements=[
+            ButtonElement(
+                text=_CONNECT_LABEL,
+                action_id=ACTION_CONNECT,
+                value=value,
+                style="primary",
+            ),
+            ButtonElement(
+                text=_NOT_RELEVANT_LABEL,
+                action_id=ACTION_NOT_RELEVANT,
+                value=value,
+            ),
+        ],
+    )
+
+
+def _match_blocks(match: RecallMatch, index: int) -> list[Block]:
+    """The blocks for one match: snippet, source/timestamp/contact/verify line, actions.
+
+    The trailing :class:`ActionsBlock` is the only place a recall match becomes
+    *actionable*. Every match rendered here is a workspace/RTS or index hit (a
+    person's offer), so every one gets the confirmation buttons; official MCP
+    results are composed elsewhere and stay informational (no actions).
+    """
     elements: list[MarkdownTextObject] = [MarkdownTextObject(text=_source_line(match))]
     contact = _contact_line(match)
     if contact is not None:
@@ -87,6 +155,7 @@ def _match_blocks(match: RecallMatch) -> list[Block]:
     return [
         SectionBlock(text=MarkdownTextObject(text=match.text or "_(no text)_")),
         ContextBlock(elements=elements),
+        _match_action_block(match, index),
     ]
 
 
@@ -113,7 +182,7 @@ def build_recall_blocks(result: list[RecallMatch] | RecallError) -> list[Block]:
     for index, match in enumerate(shown):
         if index > 0:
             blocks.append(DividerBlock())
-        blocks.extend(_match_blocks(match))
+        blocks.extend(_match_blocks(match, index))
     if len(result) > len(shown):
         blocks.append(
             ContextBlock(

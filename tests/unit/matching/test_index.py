@@ -7,10 +7,12 @@ guard). Builders come in via ``make_offer`` / ``make_need`` and a fresh ``index`
 fixture from conftest.
 """
 
+import threading
 from collections.abc import Callable
+from datetime import UTC, datetime
 from uuid import uuid4
 
-from entities import Need, Offer, Status
+from entities import Need, Offer, Status, deterministic_id
 from matching.index import OfferIndex, offer_index
 
 
@@ -174,3 +176,39 @@ def test_keyword_lookup_empty_keywords_returns_empty(
 def test_module_singleton_is_an_offer_index() -> None:
     """The shared singleton listeners import is a real OfferIndex instance."""
     assert isinstance(offer_index, OfferIndex)
+
+
+def test_concurrent_mark_resolved_loses_no_writes(index: OfferIndex) -> None:
+    """Concurrent mark_resolved across distinct offers transitions every one.
+
+    Button handlers now mutate the index from Bolt's thread pool, so the
+    get -> model_copy -> set transition (a read-modify-write) must be guarded.
+    This smoke fans many distinct mark_resolved calls across threads and asserts
+    every offer ends RESOLVED — a lost write under a race would leave one OPEN.
+    """
+    offers = [
+        Offer(
+            id=deterministic_id(f"U_{i}", datetime(2026, 3, 21, 9, 30, tzinfo=UTC)),
+            offerer=f"U_{i}",
+            resource_type="generator",
+            location="Exmouth",
+            availability="collect today",
+            source_ts=datetime(2026, 3, 21, 9, 30, tzinfo=UTC),
+        )
+        for i in range(200)
+    ]
+    for offer in offers:
+        index.add(offer)
+    barrier = threading.Barrier(len(offers))
+
+    def _resolve(offer: Offer) -> None:
+        barrier.wait()  # release all threads at once to maximise contention
+        index.mark_resolved(offer.id)
+
+    threads = [threading.Thread(target=_resolve, args=(offer,)) for offer in offers]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert all(index.lookup(offer.id).status is Status.RESOLVED for offer in offers)

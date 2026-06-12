@@ -10,8 +10,14 @@ builders come from the ``make_match`` fixture in conftest.
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from recall.blocks import VERIFY_NOTE, build_recall_blocks
+from recall.blocks import (
+    ACTION_CONNECT,
+    ACTION_NOT_RELEVANT,
+    VERIFY_NOTE,
+    build_recall_blocks,
+)
 from recall.models import RecallError, RecallMatch
+from recall.payload import ConnectPayload
 
 
 def _dicts(result) -> list[dict]:
@@ -58,9 +64,9 @@ def test_single_match_carries_source_timestamp_and_verify(
 
     blocks = _dicts([match])
 
-    # header, section (snippet), context (sourcing)
+    # header, section (snippet), context (sourcing), actions (confirmation buttons)
     types = [b["type"] for b in blocks]
-    assert types == ["header", "section", "context"]
+    assert types == ["header", "section", "context", "actions"]
     assert _text_of(blocks[1]) == "spare generator in Exmouth"
     context_text = _text_of(blocks[2])
     assert "Jordan" in context_text  # author
@@ -102,9 +108,10 @@ def test_multiple_matches_are_divider_separated(
     types = [b["type"] for b in _dicts(matches)]
 
     assert "divider" in types
-    # header + (section+context) + divider + (section+context)
+    # header + (section+context+actions) + divider + (section+context+actions)
     assert types.count("section") == 2
     assert types.count("context") == 2
+    assert types.count("actions") == 2
 
 
 def test_match_without_permalink_still_sourced(
@@ -155,3 +162,88 @@ def test_match_without_author_id_omits_contact_mention(
 
     assert "Contact:" not in context_text  # no broken/empty mention
     assert "Posted by" in context_text  # still sourced
+
+
+def _action_blocks(result) -> list[dict]:
+    return [b for b in _dicts(result) if b["type"] == "actions"]
+
+
+def test_match_card_carries_connect_and_not_relevant_buttons(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """Every workspace match gains a Connect (primary) + Not relevant confirmation row."""
+    actions = _action_blocks([make_match()])
+
+    assert len(actions) == 1
+    elements = actions[0]["elements"]
+    action_ids = [e["action_id"] for e in elements]
+    assert action_ids == [ACTION_CONNECT, ACTION_NOT_RELEVANT]
+    # Connect is the primary call to action.
+    connect = next(e for e in elements if e["action_id"] == ACTION_CONNECT)
+    assert connect["style"] == "primary"
+    assert connect["text"]["text"] == "Connect me"
+
+
+def test_every_match_card_carries_action_buttons(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """The confirmation row holds for EVERY rendered match, not just the first."""
+    matches = [make_match(text="m1"), make_match(text="m2"), make_match(text="m3")]
+
+    actions = _action_blocks(matches)
+
+    assert len(actions) == len(matches)
+    for block in actions:
+        assert [e["action_id"] for e in block["elements"]] == [
+            ACTION_CONNECT,
+            ACTION_NOT_RELEVANT,
+        ]
+    # Each row has a unique block_id so a handler can rewrite the right card.
+    assert len({b["block_id"] for b in actions}) == len(matches)
+
+
+def test_button_value_carries_index_offer_id_when_present(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """An index-hit card encodes its offer id + offerer in the button value."""
+    match = make_match()
+    match.offer_id = "offer-123"
+
+    connect = _action_blocks([match])[0]["elements"][0]
+    payload = ConnectPayload.from_value(connect["value"])
+
+    assert payload.offer_id == "offer-123"
+    assert payload.offerer_id == "U_OFFERER"  # the fixture's author_id
+
+
+def test_button_value_carries_permalink_for_rts_only_match(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """An RTS-only card (no offer id) encodes the offerer + permalink for sourcing."""
+    match = make_match(permalink="https://x/p1")  # offer_id stays "" (RTS hit)
+
+    connect = _action_blocks([match])[0]["elements"][0]
+    payload = ConnectPayload.from_value(connect["value"])
+
+    assert payload.offer_id == ""
+    assert payload.permalink == "https://x/p1"
+    assert payload.offerer_id == "U_OFFERER"
+
+
+def test_button_value_omits_requester_identity(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """The requester is never in the payload — it is the human who clicks (no auto-action)."""
+    connect = _action_blocks([make_match()])[0]["elements"][0]
+
+    assert "requester" not in connect["value"]
+
+
+def test_degraded_result_has_no_action_buttons() -> None:
+    """A degraded (RecallError) reply carries no buttons — nothing to act on."""
+    assert _action_blocks(RecallError(reason="ratelimited")) == []
+
+
+def test_empty_result_has_no_action_buttons() -> None:
+    """A zero-match reply carries no buttons — nothing to confirm."""
+    assert _action_blocks([]) == []

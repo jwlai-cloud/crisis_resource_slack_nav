@@ -29,7 +29,9 @@ def match_from_offer(offer: Offer) -> RecallMatch:
     offer's ``source_ts`` (both real, trust-critical source fields). ``author_id``
     carries the offerer handle too (the parsed offerer *is* the Slack user id),
     ``channel`` is a synthetic provenance label, and ``permalink`` is empty — an
-    index hit links to no single workspace message.
+    index hit links to no single workspace message. ``offer_id`` carries the
+    index id (as a string) so the action-button handlers can ``mark_resolved`` the
+    exact offer when the human confirms a match.
     """
     text = f"{offer.resource_type} — {offer.availability} ({offer.location})"
     return RecallMatch(
@@ -40,4 +42,5 @@ def match_from_offer(offer: Offer) -> RecallMatch:
         channel_id="",
         ts=offer.source_ts,
         permalink="",
+        offer_id=str(offer.id),
     )

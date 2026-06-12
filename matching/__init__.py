@@ -10,13 +10,17 @@ The index is in-memory by design (no persistence, single-process) — see
 durable store; the index is a latency optimisation, never the system of record.
 """
 
+from matching.audit import AuditEvent, AuditTrail, audit_trail
 from matching.blocks import build_offer_ack_blocks
 from matching.conversion import INDEX_SOURCE_CHANNEL, match_from_offer
 from matching.index import OfferIndex, offer_index
 
 __all__ = [
     "INDEX_SOURCE_CHANNEL",
+    "AuditEvent",
+    "AuditTrail",
     "OfferIndex",
+    "audit_trail",
     "build_offer_ack_blocks",
     "match_from_offer",
     "offer_index",
