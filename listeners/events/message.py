@@ -72,6 +72,7 @@ def handle_message(
                 thread_ts=thread_ts,
                 client=client,
                 user_token=resolve_user_token(context.user_token),
+                team_id=context.team_id,
                 say=say,
             )
         except Exception as recall_error:

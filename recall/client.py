@@ -49,6 +49,7 @@ async def recall_offers(
     need: Need,
     client: WebClient,
     user_token: str | None,
+    team_id: str | None = None,
 ) -> list[RecallMatch] | RecallError:
     """Search the workspace for prior offers/notices relevant to ``need``.
 
@@ -69,7 +70,8 @@ async def recall_offers(
         response = await asyncio.to_thread(
             client.api_call,
             _SEARCH_METHOD,
-            params={"query": query, "limit": str(_RESULT_LIMIT)},
+            params={"query": query, "limit": str(_RESULT_LIMIT)}
+            | ({"team_id": team_id} if team_id else {}),
             headers={"Authorization": f"Bearer {user_token}"},
         )
     except SlackApiError as exc:

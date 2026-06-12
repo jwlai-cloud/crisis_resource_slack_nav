@@ -40,6 +40,7 @@ def maybe_post_recall(
     thread_ts: str,
     client: WebClient,
     user_token: str | None,
+    team_id: str | None = None,
     say: Say,
 ) -> bool:
     """If ``text`` is a Need, post the ranked, sourced recall reply; return whether posted.
@@ -55,7 +56,7 @@ def maybe_post_recall(
         return False
 
     need: Need = parsed
-    result = asyncio.run(recall_offers(need, client, user_token))
+    result = asyncio.run(recall_offers(need, client, user_token, team_id))
     if isinstance(result, list):
         result = rank_matches(need, result, datetime.now(UTC))
 
