@@ -5,6 +5,7 @@ from slack_bolt import BoltContext, Say, SayStream, SetStatus
 from slack_sdk import WebClient
 
 from agent import AgentDeps, run_agent
+from agent.deps import resolve_user_token
 from listeners.recall_reply import maybe_post_recall
 from listeners.views.feedback_builder import build_feedback_blocks
 from thread_context import conversation_store
@@ -60,7 +61,7 @@ def handle_app_mentioned(
                 event_ts=event["ts"],
                 thread_ts=thread_ts,
                 client=client,
-                user_token=context.user_token,
+                user_token=resolve_user_token(context.user_token),
                 say=say,
             )
         except Exception as recall_error:
@@ -73,7 +74,7 @@ def handle_app_mentioned(
             channel_id=channel_id,
             thread_ts=thread_ts,
             message_ts=event["ts"],
-            user_token=context.user_token,
+            user_token=resolve_user_token(context.user_token),
         )
         result = run_agent(cleaned_text, deps, message_history=history)
 
