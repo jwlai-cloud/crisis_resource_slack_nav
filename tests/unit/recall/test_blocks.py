@@ -118,3 +118,40 @@ def test_match_without_permalink_still_sourced(
     assert "View message" not in context_text  # no link rendered
     assert "Posted by" in context_text
     assert VERIFY_NOTE in context_text
+
+
+def test_match_carries_tappable_contact_mention(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """Every match renders a tappable `Contact: <@author_id>` Slack mention."""
+    match = make_match()  # author_id defaults to "U_OFFERER" in the fixture
+
+    context_text = _text_of(_dicts([match])[2])
+
+    assert "Contact: <@U_OFFERER>" in context_text
+
+
+def test_every_match_has_contact_mention(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """The contact mention holds for EVERY item, alongside source + timestamp + verify."""
+    matches = [make_match(text="m1"), make_match(text="m2"), make_match(text="m3")]
+
+    context_blocks = [b for b in _dicts(matches) if b["type"] == "context"]
+
+    assert len(context_blocks) == len(matches)
+    for ctx in context_blocks:
+        assert "Contact: <@U_OFFERER>" in _text_of(ctx)
+
+
+def test_match_without_author_id_omits_contact_mention(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """A hit with no author_id omits the contact line — never an empty `<@>` mention."""
+    match = make_match()
+    match.author_id = ""
+
+    context_text = _text_of(_dicts([match])[2])
+
+    assert "Contact:" not in context_text  # no broken/empty mention
+    assert "Posted by" in context_text  # still sourced

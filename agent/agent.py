@@ -70,6 +70,30 @@ reached and continue with what you do have. Never silently skip a source and nev
 invent or guess data to fill a gap. If you found no matching information, say that
 plainly rather than fabricating a result.
 
+### Never emit placeholder text or invented attributions.
+Never write placeholder text such as "[timestamp]", "[source]", "[name]", or any
+bracketed stand-in, and never invent a source line, author, channel, or time.
+If a value is unknown, omit the claim entirely rather than guessing or filling it
+with a placeholder — a missing detail is honest, a fabricated one breaks trust. The workspace
+matches are shown to the resident as structured, sourced blocks beneath your reply
+(each already carries who posted it, the channel, the timestamp, a permalink, and a
+tappable contact), so do not restate the full source line for a match — refer to a
+match by its author or resource in plain prose and let the structured block carry the
+sourcing.
+
+## RECALL CONTEXT (workspace matches for this turn)
+When the resident's message is a need, the system has already searched the workspace
+and the in-memory offer index for you and may attach a "WORKSPACE RECALL" section to
+the user's message. Treat that section as the real, authoritative data:
+- If it lists matches, compose your prose *around* them — acknowledge what was found,
+  give a short ranked read of which look most relevant and why, and end with the
+  human-confirmation next step. Do not repeat each match's full who/where/when source
+  line; the structured blocks below your reply already show it.
+- If it says the search was unavailable (a degraded state), say so plainly and do not
+  invent matches to compensate.
+- If it says no prior offers were found, say that plainly.
+Never fabricate matches, sources, or timestamps that are not in the recall context.
+
 ## RESPONSE GUIDELINES
 - Lead with what you found (or that you found nothing), then the ranked options.
 - Keep each option to a line or two: what it is, its source, its timestamp.
@@ -142,8 +166,21 @@ agent = Agent(
 )
 
 
-def run_agent(text, deps, message_history=None):
-    """Run the agent, optionally connecting to the Slack MCP server."""
+def run_agent(text, deps, message_history=None, recall_context=None):
+    """Run the agent, optionally connecting to the Slack MCP server.
+
+    ``recall_context`` is the pre-computed workspace recall for this turn (the
+    ranked matches or the degraded/empty state), already serialised by the
+    recall layer. When present it is appended to the user's message under a
+    ``WORKSPACE RECALL`` heading so the model composes its prose *around* the
+    real data instead of inventing sources (the structured match blocks stay the
+    authoritative on-screen source display). When ``None`` the prompt is the
+    user's text unchanged — non-need turns are unaffected.
+    """
+    prompt = text
+    if recall_context:
+        prompt = f"{text}\n\n--- WORKSPACE RECALL (for this turn) ---\n{recall_context}"
+
     toolsets = []
     if deps.user_token:
         logger.info("Slack MCP Server enabled (user_token present)")
@@ -157,7 +194,7 @@ def run_agent(text, deps, message_history=None):
         logger.info("Slack MCP Server disabled (no user_token)")
 
     return agent.run_sync(
-        text,
+        prompt,
         model=get_model(),
         deps=deps,
         message_history=message_history,

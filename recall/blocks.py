@@ -4,7 +4,8 @@ Every path here honours the product guardrails (CLAUDE.md, design doc safety):
 
 * **Every item is sourced and timestamped.** Each match renders its text, then a
   context line carrying who posted it, which channel, and when — plus a
-  permalink. No match block omits source or timestamp.
+  permalink and a tappable ``Contact: <@author_id>`` mention. No match block omits
+  source or timestamp.
 * **Verify before relying.** Every match carries the standing "verify before
   relying on this" note; the agent never asserts a match is correct or safe.
 * **Degraded states are explicit.** A :class:`RecallError` composes a calm
@@ -64,16 +65,28 @@ def _source_line(match: RecallMatch) -> str:
     return line
 
 
+def _contact_line(match: RecallMatch) -> str | None:
+    """A tappable `Contact: <@author_id>` Slack mention, or ``None`` if no id.
+
+    The author id (the Slack user who posted the offer) renders as a real, tappable
+    mention so the human can reach the contact in one tap. When the id is missing we
+    return ``None`` rather than an empty ``<@>`` — a broken mention would mislead.
+    """
+    if not match.author_id:
+        return None
+    return f"Contact: <@{match.author_id}>"
+
+
 def _match_blocks(match: RecallMatch) -> list[Block]:
-    """The blocks for a single match: snippet, then its source+timestamp+verify line."""
+    """The blocks for a single match: snippet, then its source+timestamp+contact+verify line."""
+    elements: list[MarkdownTextObject] = [MarkdownTextObject(text=_source_line(match))]
+    contact = _contact_line(match)
+    if contact is not None:
+        elements.append(MarkdownTextObject(text=contact))
+    elements.append(MarkdownTextObject(text=VERIFY_NOTE))
     return [
         SectionBlock(text=MarkdownTextObject(text=match.text or "_(no text)_")),
-        ContextBlock(
-            elements=[
-                MarkdownTextObject(text=_source_line(match)),
-                MarkdownTextObject(text=VERIFY_NOTE),
-            ]
-        ),
+        ContextBlock(elements=elements),
     ]
 
 
