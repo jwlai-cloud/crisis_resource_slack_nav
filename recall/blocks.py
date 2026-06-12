@@ -33,6 +33,9 @@ from recall.models import RecallError, RecallMatch
 VERIFY_NOTE = "Verify before relying on this."
 
 _HEADER = "Prior offers from this workspace"
+
+# Slack caps messages at 50 blocks; each match renders ~3 blocks + divider.
+_MAX_RENDERED_MATCHES = 5
 _NO_MATCHES = (
     "I found *no prior offers* in this workspace for that need yet. "
     "I'll keep what you posted on record so it can be matched as offers come in."
@@ -93,8 +96,19 @@ def build_recall_blocks(result: list[RecallMatch] | RecallError) -> list[Block]:
         return [SectionBlock(text=MarkdownTextObject(text=_NO_MATCHES))]
 
     blocks: list[Block] = [HeaderBlock(text=PlainTextObject(text=_HEADER))]
-    for index, match in enumerate(result):
+    shown = result[:_MAX_RENDERED_MATCHES]
+    for index, match in enumerate(shown):
         if index > 0:
             blocks.append(DividerBlock())
         blocks.extend(_match_blocks(match))
+    if len(result) > len(shown):
+        blocks.append(
+            ContextBlock(
+                elements=[
+                    MarkdownTextObject(
+                        text=f"Showing the top {len(shown)} of {len(result)} matches."
+                    )
+                ]
+            )
+        )
     return blocks
