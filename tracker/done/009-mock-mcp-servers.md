@@ -159,3 +159,10 @@ $ corrupt/schema-drift/non-list/naive-ts JSON via real loader -> FeedError(feed_
 
 **VERDICT: PASS**
 All seven implementable ACs verified with runtime evidence; AC8 is [HUMAN], awaiting live sandbox. Full suite green, 0 warnings, e2e adversarial pass green on every in-scope break path; all four guardrails + placeholder rule + new stamping rule hold. The two non-blocking items above are pre-existing-pattern follow-ups, not 009 regressions.
+
+### [Human] 2026-06-12 20:18 — AC8 live verification (PASS)
+Need message in sandbox DM produced the full three-tech reply: RTS workspace match
+(generator+water offer, contact mention) + MCP official data (water point, road
+closures incl. Yannarie crossing CLOSED and Learmonth under assessment, two evac
+centres) — every MCP item stamped feed/fetched-at with the verify note. Demo-script
+beat 0:55-1:20 reproduced live.
