@@ -65,6 +65,9 @@ testpaths = ["tests/unit", "tests/integration"]
 python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-ra --strict-markers"
+markers = [
+    "live: hits a real external service (e.g. a live LLM). Skipped unless a provider key is configured; never runs in CI without secrets.",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
