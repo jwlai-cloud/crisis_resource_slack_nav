@@ -185,3 +185,10 @@ SKIPPED [1] ...test_parsing_live.py:30: no live provider key configured
 **VERDICT: PASS**
 
 All five non-HUMAN acceptance criteria verified with code + test + runtime evidence; full suite green (76 passed, 0 warnings); all four product guardrails re-checked and hold on the designed paths; happy path and 4/5 adversarial break paths green. The single adversarial finding (silent skip on a malformed-but-ok RTS response) is narrow, low-probability, does not break the LLM reply, and is recorded as a non-blocking follow-up. AC6 awaits human live-sandbox verification.
+
+### [Human] 2026-06-12 16:02 — AC6 live verification (PASS)
+Live in sandbox DM after the user-token + team_id + block-cap + noise-filter fixes:
+recall block rendered with only the relevant #general offer — author, channel,
+UTC timestamp, permalink, and verify note on the item; zero-overlap noise gone.
+LLM reply below now cites real sources/timestamps via the MCP toolset.
+Known follow-up: duplicate content between block and LLM prose → task 005.
