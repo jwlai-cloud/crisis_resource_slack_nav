@@ -27,8 +27,12 @@ regression net, typed Need/Offer/Resolution core + structured parsing, RTS recal
 domain ranking and explicit degraded states, in-memory offer index (ADR-0003), unified
 single-reply UX with contact mentions. All live-verified; 13 bugs found and fixed in
 live testing. Gemini now runs via Vertex AI express mode (no free-tier caps). Stage PR:
-https://github.com/jwlai-cloud/crisis_resource_slack_nav/pull/1. Next: **W3 — mock MCP
-servers + action buttons.**
+https://github.com/jwlai-cloud/crisis_resource_slack_nav/pull/1. W3 done (2026-06-12, same day): tasks 008-010 — mock MCP servers (FastMCP, stdio,
+Narelle scenario feeds with structured degraded states), Connect / Mark resolved /
+Not relevant action buttons (group DM intro, index locking, audit-trail seed), and
+match-card visual parity with the landing page. All live-verified. Backlog groomed:
+006/007/011/012/013/014. Next: **W4 — coordinator Canvas + situation board,
+persistence decision (statuses + audit), seed data via task 013, polish.**
 
 ## Artifacts in the repo
 
