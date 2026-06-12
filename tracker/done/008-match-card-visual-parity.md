@@ -278,3 +278,9 @@ $ adversarial probes (build_recall_blocks / build_offer_ack_blocks):
   to optionally route as a tidy-up; does not affect behaviour.
 
 **VERDICT: PASS**
+
+### [Human] 2026-06-12 21:48 — [HUMAN] live verification (PASS)
+Side-by-side parity confirmed in sandbox: parse-summary fields, green rank labels
+(MATCH 1/2 · WORKSPACE · REAL-TIME SEARCH), Dismissed state rendering, sourcing +
+Connect/Not relevant intact. Found: need-echo match (filed 014) and the expected
+ADR-0003 restart gap (resolved offer re-armed).
