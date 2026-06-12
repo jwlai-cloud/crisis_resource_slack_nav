@@ -57,7 +57,7 @@ _cached_model: str | None = None
 def get_model() -> str:
     """Select the AI model based on available API keys.
 
-    Prefers Anthropic when both keys are set.
+    Preference order: Anthropic, OpenAI, Gemini.
     """
     global _cached_model
     if _cached_model is not None:
@@ -67,10 +67,12 @@ def get_model() -> str:
         _cached_model = "anthropic:claude-sonnet-4-6"
     elif os.environ.get("OPENAI_API_KEY"):
         _cached_model = "openai:gpt-4.1-mini"
+    elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        _cached_model = "google:gemini-2.5-flash"
     else:
         raise RuntimeError(
             "No AI provider configured. "
-            "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your environment."
+            "Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in your environment."
         )
     return _cached_model
 
