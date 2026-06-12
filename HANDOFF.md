@@ -20,9 +20,9 @@ Bridge from the design phase (done in chat) into the Claude Code build sessions.
 
 ## Where we are
 
-**Design phase: complete.** Problem, solution, architecture, three-tech mapping, build plan, demo script, and abstract are all written and committed (or about to be). No major open design decisions block the start of the build.
+**Design phase: complete.** Problem, solution, architecture, three-tech mapping, build plan, demo script, and abstract are all written and committed.
 
-**Build phase: not started.** No scaffold yet. Sandbox provisioning status: confirm before session 1.
+**Build phase: W1 done (2026-06-12).** Sandbox `crisis-resource-nav` (Team `E0B9Z77AX2R`) provisioned via Developer Program (work-identity eligibility, no card). App scaffolded from the pydantic-ai starter-agent template, installed to the sandbox as "Crisis Resource Navigator (local)" (App `A0B9ZKSDZ9B`), and verified live: message in → Gemini reasoning → reply + emoji-reaction tool call + feedback buttons. Gemini via `GEMINI_API_KEY` (free tier; transient 503s observed — graceful degraded-state handling is W4). Next: **W2 — need/offer parsing + RTS recall + real system prompt.**
 
 ## Artifacts in the repo
 
