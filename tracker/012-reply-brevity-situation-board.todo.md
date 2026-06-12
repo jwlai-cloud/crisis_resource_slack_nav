@@ -11,3 +11,8 @@ User feedback (2026-06-12, after 009 live test): the need reply dumped the full 
 Groom with W4 (Canvas task) — the board is the Canvas's first concrete content.
 
 ## Log
+
+Addendum (2026-06-12, token-cost review): serialize_recall_context sends ALL ranked
+matches with untruncated text to the LLM while blocks render top 5 — cap the context
+at the same 5 and truncate snippets (~200 chars). Also add an RTS observability log
+line (query latency + pre/post-filter counts) alongside the W4 audit work.
