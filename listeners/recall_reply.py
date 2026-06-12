@@ -151,7 +151,11 @@ def route_message(
     plainly" context), never a raise — the listener's own error handling still
     wraps the LLM reply.
     """
-    parsed = parse_message(text, author, _event_ts_to_utc(event_ts))
+    try:
+        parsed = parse_message(text, author, _event_ts_to_utc(event_ts))
+    except Exception:
+        logger.exception("Parse failed; continuing without recall routing")
+        return None
 
     if isinstance(parsed, Offer):
         _post_offer_ack(parsed, thread_ts=thread_ts, say=say)

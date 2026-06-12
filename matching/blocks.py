@@ -36,10 +36,20 @@ def _format_ts(ts: datetime) -> str:
 
 
 def _source_line(offer: Offer) -> str:
-    """The sourcing context line for an offer: who / what / where / when."""
-    offerer = offer.offerer or "Unknown offerer"
+    """The sourcing context line for an offer: who / what / where / when.
+
+    The offerer renders as a real Slack mention when it looks like a user id;
+    an unknown location is omitted rather than shown as "in unknown" — the
+    no-placeholder rule applies to our own blocks too.
+    """
+    if offer.offerer and offer.offerer.startswith(("U", "W")) and offer.offerer.isalnum():
+        offerer = f"<@{offer.offerer}>"
+    else:
+        offerer = f"*{offer.offerer or 'Unknown offerer'}*"
+    location = (offer.location or "").strip()
+    where = f" in {location}" if location and location.lower() != "unknown" else ""
     return (
-        f"Offer from *{offerer}*: {offer.resource_type} in {offer.location} "
+        f"Offer from {offerer}: {offer.resource_type}{where} "
         f"· {offer.availability} · logged {_format_ts(offer.source_ts)}"
     )
 

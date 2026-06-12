@@ -163,6 +163,9 @@ agent = Agent(
     deps_type=AgentDeps,
     system_prompt=SYSTEM_PROMPT,
     tools=[add_emoji_reaction],
+    # Smaller models (gemini-2.5-flash-lite) occasionally emit malformed
+    # tool calls; one retry is not enough and the failure nukes the reply.
+    retries=3,
 )
 
 

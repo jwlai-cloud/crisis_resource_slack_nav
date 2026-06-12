@@ -66,6 +66,9 @@ class NotACrisisMessage(BaseModel):
 parsing_agent: Agent[None, ParsedNeed | ParsedOffer | NotACrisisMessage] = Agent(
     output_type=[ParsedNeed, ParsedOffer, NotACrisisMessage],
     system_prompt=PARSING_PROMPT,
+    # Structured-output unions are where small models fail most; give the
+    # validation loop room before the whole turn errors out.
+    retries=3,
 )
 
 
