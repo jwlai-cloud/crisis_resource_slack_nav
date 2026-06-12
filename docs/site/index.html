@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crisis Resource Navigator — field guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --aubergine: #4A154B;
+    --aubergine-deep: #3A0F3B;
+    --aubergine-soft: #611F69;
+    --paper: #FFFFFF;
+    --cloud: #F8F8F8;
+    --ink: #1D1C1D;
+    --ink-dim: #616061;
+    --line: #DDDDDD;
+    --blue: #36C5F0;
+    --green: #2EB67D;
+    --red: #E01E5A;
+    --yellow: #ECB22E;
+    --link: #1264A3;
+    --mono: "IBM Plex Mono", monospace;
+    --body: "Lato", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--paper); color: var(--ink); font-family: var(--body); line-height: 1.55; overflow-x: hidden; }
+
+  /* ── top bulletin ───────────────────────────── */
+  .bulletin {
+    background: var(--aubergine-deep); color: #E8D8E9;
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+    padding: 8px 16px; letter-spacing: .06em;
+    display: flex; gap: 28px; overflow: hidden; white-space: nowrap;
+  }
+  .bulletin span { flex-shrink: 0; }
+  .bulletin b { color: var(--yellow); font-weight: 600; }
+
+  /* ── hero ───────────────────────────────────── */
+  header.hero {
+    background: var(--aubergine);
+    color: #fff; position: relative; overflow: hidden;
+  }
+  .hero-inner { max-width: 1060px; margin: 0 auto; padding: 90px 28px 70px; position: relative; }
+  .hero::after { /* slack-ish corner dots */
+    content: ""; position: absolute; right: -120px; top: -120px; width: 420px; height: 420px;
+    background:
+      radial-gradient(circle at 30% 30%, var(--blue) 0 28px, transparent 29px),
+      radial-gradient(circle at 70% 35%, var(--green) 0 28px, transparent 29px),
+      radial-gradient(circle at 35% 70%, var(--yellow) 0 28px, transparent 29px),
+      radial-gradient(circle at 72% 72%, var(--red) 0 28px, transparent 29px);
+    opacity: .25; transform: rotate(12deg);
+  }
+  .kicker {
+    font-family: var(--mono); color: var(--yellow); font-size: 12.5px;
+    letter-spacing: .14em; text-transform: uppercase;
+    display: inline-block; border: 1px solid #ffffff33; border-radius: 4px;
+    padding: 6px 12px; margin-bottom: 28px; background: #ffffff10;
+    animation: rise .7s ease both;
+  }
+  h1 {
+    font-weight: 900; font-size: clamp(44px, 7.5vw, 84px);
+    line-height: 1.0; letter-spacing: -0.02em;
+    animation: rise .7s .08s ease both;
+  }
+  h1 .accent { color: var(--yellow); display: block; }
+  .lede { max-width: 620px; margin-top: 26px; font-size: 19px; color: #E8D8E9; animation: rise .7s .16s ease both; }
+  .lede strong { color: #fff; }
+  .hero-cta { margin-top: 38px; display: flex; gap: 14px; flex-wrap: wrap; animation: rise .7s .24s ease both; }
+  .btn {
+    font-size: 16px; font-weight: 700; text-decoration: none;
+    padding: 13px 26px; cursor: pointer; border-radius: 6px; transition: all .18s;
+  }
+  .btn-solid { background: #fff; color: var(--aubergine); }
+  .btn-solid:hover { transform: translateY(-2px); box-shadow: 0 8px 24px -8px #0008; }
+  .btn-ghost { color: #fff; background: transparent; border: 1px solid #ffffff66; }
+  .btn-ghost:hover { background: #ffffff14; transform: translateY(-2px); }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+
+  section { max-width: 1060px; margin: 0 auto; padding: 76px 28px; }
+  section.alt { max-width: none; background: var(--cloud); }
+  section.alt > .inner { max-width: 1060px; margin: 0 auto; }
+  .sec-label {
+    font-family: var(--mono); font-size: 12px; color: var(--aubergine-soft);
+    text-transform: uppercase; letter-spacing: .16em; margin-bottom: 10px; font-weight: 600;
+  }
+  h2 { font-size: clamp(30px, 4.5vw, 44px); font-weight: 900; letter-spacing: -0.01em; line-height: 1.05; margin-bottom: 16px; }
+  .sec-intro { color: var(--ink-dim); max-width: 640px; margin-bottom: 40px; font-size: 17px; }
+
+  /* ── demo ───────────────────────────────────── */
+  .demo-wrap { display: grid; grid-template-columns: 280px 1fr; gap: 26px; align-items: start; }
+  @media (max-width: 860px) { .demo-wrap { grid-template-columns: 1fr; } }
+
+  .loop-rail { position: sticky; top: 24px; }
+  .loop-rail h3 {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
+    text-transform: uppercase; letter-spacing: .12em; margin-bottom: 14px; font-weight: 500;
+  }
+  .stage {
+    border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px;
+    padding: 11px 14px; margin-bottom: 8px; background: #fff;
+    font-family: var(--mono); font-size: 13px; color: var(--ink-dim); transition: all .25s;
+  }
+  .stage b { color: var(--ink); font-weight: 600; display: block; font-size: 13.5px; }
+  .stage.active { border-left-color: var(--yellow); background: #FFFAEE; box-shadow: 0 2px 8px -2px #0002; }
+  .stage.active b { color: var(--aubergine); }
+  .stage.done { border-left-color: var(--green); }
+  .stage.done b::after { content: " ✓"; color: var(--green); }
+
+  .slack-window {
+    border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden;
+    box-shadow: 0 24px 60px -24px #0004;
+  }
+  .slack-bar {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); background: var(--aubergine);
+  }
+  .slack-bar .hash { color: #fff; font-weight: 900; font-size: 16px; }
+  .slack-bar .title { font-size: 14px; font-weight: 700; color: #fff; }
+  .slack-bar .live { margin-left: auto; font-family: var(--mono); font-size: 11px; color: #B7E8CF; }
+  .slack-bar .live::before { content: "●"; margin-right: 5px; color: var(--green); animation: blink 1.6s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .thread { padding: 20px; min-height: 380px; display: flex; flex-direction: column; gap: 4px; background: #fff; }
+  .msg { display: flex; gap: 10px; animation: msgIn .35s ease both; padding: 7px 8px; border-radius: 8px; }
+  .msg:hover { background: var(--cloud); }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .avatar {
+    width: 38px; height: 38px; flex-shrink: 0; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 15px; color: #fff;
+  }
+  .avatar.user { background: var(--yellow); color: #5d4a00; }
+  .avatar.bot  { background: var(--aubergine); }
+  .msg .who { font-weight: 900; font-size: 15px; }
+  .msg .who .app-tag {
+    font-size: 10px; background: #E8E8E8; color: var(--ink-dim); border-radius: 3px;
+    padding: 1px 5px; margin-left: 6px; vertical-align: 1px; font-weight: 700; letter-spacing: .03em;
+  }
+  .msg .who time { color: var(--ink-dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .msg .text { font-size: 15px; margin-top: 1px; }
+  .react {
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 6px;
+    border: 1px solid #C9DEF0; background: #EAF5FC; padding: 2px 9px;
+    border-radius: 14px; font-size: 12.5px; font-family: var(--mono); color: var(--link);
+  }
+
+  .parse-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .chip {
+    font-family: var(--mono); font-size: 11.5px; padding: 4px 10px; border-radius: 4px;
+    background: #F3EAF4; color: var(--aubergine-soft); border: 1px solid #E0CCE2;
+    animation: msgIn .3s ease both;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  .card {
+    border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 6px;
+    background: var(--cloud); padding: 13px 15px; margin-top: 10px; animation: msgIn .35s ease both;
+  }
+  .card.official { border-left-color: var(--blue); }
+  .card.warn { border-left-color: var(--red); }
+  .card .rank {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+    text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px;
+  }
+  .card .rank b { color: var(--green); }
+  .card.official .rank b { color: var(--link); }
+  .card .what { font-size: 15px; font-weight: 600; }
+  .card .src {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-dim); margin-top: 7px;
+    display: flex; flex-wrap: wrap; gap: 4px 16px;
+  }
+  .card .verify {
+    font-family: var(--mono); font-size: 11px; color: #9F6B00;
+    margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--line);
+  }
+  .card .verify::before { content: "⚠ "; }
+  .card .actions { margin-top: 10px; display: flex; gap: 8px; }
+  .mini-btn {
+    font-size: 13.5px; font-weight: 700; padding: 6px 13px; cursor: pointer; border-radius: 5px;
+    border: 1px solid var(--green); color: var(--green); background: #fff; transition: all .15s;
+  }
+  .mini-btn:hover { background: #EAF8F2; }
+  .mini-btn.primary { background: var(--green); color: #fff; }
+  .mini-btn.primary:hover { filter: brightness(1.08); }
+
+  .typing { display: inline-flex; gap: 4px; padding: 6px 2px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-dim); animation: tp 1s infinite; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes tp { 30% { transform: translateY(-4px); opacity: 1; } }
+
+  .prompt-row { border-top: 1px solid var(--line); padding: 16px 20px; background: var(--cloud); }
+  .prompt-row .hint { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .1em; }
+  .prompts { display: flex; flex-wrap: wrap; gap: 9px; }
+  .prompt {
+    font-family: var(--body); font-size: 14px; color: var(--ink); border-radius: 8px;
+    border: 1px solid var(--line); background: #fff; padding: 9px 14px;
+    cursor: pointer; transition: all .15s; text-align: left;
+  }
+  .prompt:hover:not(:disabled) { border-color: var(--aubergine-soft); box-shadow: 0 2px 10px -4px #0003; transform: translateY(-1px); }
+  .prompt:disabled { opacity: .4; cursor: wait; }
+  .prompt .tag { font-family: var(--mono); font-size: 10px; color: var(--aubergine-soft); display: block; letter-spacing: .08em; margin-bottom: 2px; text-transform: uppercase; }
+
+  .toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--ink); color: #fff; font-size: 13.5px; font-weight: 600; border-radius: 8px;
+    padding: 12px 22px; z-index: 1000; transition: transform .3s cubic-bezier(.2,.9,.3,1.2);
+    max-width: 92vw; box-shadow: 0 12px 40px -8px #0006;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── architecture ───────────────────────────── */
+  .arch { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: stretch; }
+  @media (max-width: 760px) { .arch { grid-template-columns: 1fr !important; } .arch-arrow { transform: rotate(90deg); } }
+  .arch-box {
+    border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 20px; position: relative;
+    box-shadow: 0 2px 10px -6px #0002;
+  }
+  .arch-box::before {
+    content: attr(data-n); position: absolute; top: -10px; left: 14px;
+    background: var(--aubergine); color: #fff; border-radius: 4px; padding: 1px 9px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  }
+  .arch-box h4 { font-size: 19px; font-weight: 900; }
+  .arch-box p { font-size: 13.5px; color: var(--ink-dim); margin-top: 7px; line-height: 1.6; }
+  .arch-box p code { font-family: var(--mono); font-size: 12px; color: var(--aubergine-soft); background: #F3EAF4; padding: 1px 5px; border-radius: 3px; }
+  .arch-box .pill {
+    display: inline-block; font-family: var(--mono); font-size: 10.5px; margin-top: 10px; margin-right: 6px;
+    background: #F3EAF4; color: var(--aubergine-soft); padding: 3px 9px; border-radius: 10px; letter-spacing: .04em;
+  }
+  .arch-center { display: flex; flex-direction: column; gap: 16px; justify-content: center; }
+  .arch-arrow { color: var(--aubergine-soft); font-size: 22px; text-align: center; align-self: center; }
+  .arch-stack { display: flex; flex-direction: column; gap: 16px; }
+  .loop-tag {
+    font-family: var(--mono); font-size: 11px; color: var(--green); letter-spacing: .08em; text-align: center;
+    border: 1px dashed #9bd9c0; border-radius: 6px; padding: 6px 10px; margin-top: 10px;
+  }
+
+  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 44px; }
+  @media (max-width: 760px) { .pillars { grid-template-columns: 1fr !important; } }
+  .pillar {
+    background: #fff; border: 1px solid var(--line); border-top: 4px solid var(--aubergine); border-radius: 10px; padding: 20px;
+  }
+  .pillar:nth-child(2) { border-top-color: var(--blue); }
+  .pillar:nth-child(3) { border-top-color: var(--green); }
+  .pillar:nth-child(4) { border-top-color: var(--yellow); }
+  .pillar h4 { font-size: 19px; font-weight: 900; }
+  .pillar .role { font-family: var(--mono); font-size: 10.5px; color: var(--aubergine-soft); letter-spacing: .12em; text-transform: uppercase; margin: 4px 0 10px; }
+  .pillar p { font-size: 14px; color: var(--ink-dim); }
+  .pillar p span, .pillar p code { font-family: var(--mono); font-size: 12px; }
+
+  /* ── guardrails ─────────────────────────────── */
+  .rails { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .rails { grid-template-columns: 1fr; } }
+  .rail { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 22px; position: relative; overflow: hidden; }
+  .rail::after { content: ""; position: absolute; top: 0; right: 0; width: 56px; height: 6px; background: var(--red); border-radius: 0 0 0 6px; opacity: .85; }
+  .rail .num { font-family: var(--mono); color: var(--red); font-size: 11.5px; letter-spacing: .14em; font-weight: 600; }
+  .rail h4 { font-size: 21px; font-weight: 900; margin: 6px 0 8px; }
+  .rail p { font-size: 14px; color: var(--ink-dim); }
+  .rail p code { font-family: var(--mono); font-size: 12px; color: var(--aubergine-soft); background: #F3EAF4; padding: 1px 5px; border-radius: 3px; }
+
+  /* ── build log ──────────────────────────────── */
+  .log { border-left: 2px solid var(--line); margin-left: 8px; padding-left: 28px; display: flex; flex-direction: column; gap: 26px; }
+  .log-item { position: relative; }
+  .log-item::before {
+    content: ""; position: absolute; left: -36px; top: 5px; width: 13px; height: 13px;
+    background: #fff; border: 2px solid var(--line); border-radius: 50%;
+  }
+  .log-item.done::before { background: var(--green); border-color: var(--green); }
+  .log-item.now::before { background: var(--yellow); border-color: var(--yellow); animation: blink 1.6s infinite; }
+  .log-item .week { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--ink-dim); text-transform: uppercase; font-weight: 600; }
+  .log-item.done .week { color: var(--green); }
+  .log-item.now .week { color: #9F6B00; }
+  .log-item h4 { font-size: 20px; font-weight: 900; margin: 2px 0 6px; }
+  .log-item p { font-size: 14px; color: var(--ink-dim); max-width: 640px; }
+  .log-item .tasks { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .log-item .t { font-family: var(--mono); font-size: 12.5px; color: var(--ink-dim); }
+  .t.ok::before  { content: "[✓] "; color: var(--green); }
+  .t.run::before { content: "[~] "; color: #9F6B00; }
+  .t.todo::before{ content: "[ ] "; color: var(--ink-dim); }
+
+  footer {
+    background: var(--aubergine-deep); margin-top: 40px;
+    padding: 36px 28px 60px; text-align: center;
+    font-family: var(--mono); font-size: 12.5px; color: #C9A9CB;
+  }
+  footer .deadline { color: var(--yellow); }
+</style>
+</head>
+<body>
+
+<div class="bulletin">
+  <span>⚠ <b>Scenario:</b> Severe Tropical Cyclone Narelle</span>
+  <span>Exmouth WA · Isolated · Mar 2026</span>
+  <span>Road impassable · Power down · Airport destroyed</span>
+  <span><b>Coordination surface:</b> Slack</span>
+</div>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="kicker">Slack Agent Builder Challenge · Agent for Good</div>
+    <h1>Crisis Resource <span class="accent">Navigator</span></h1>
+    <p class="lede">When a disaster cuts a town off, coordination collapses into one chaotic group chat. This agent turns that chat into a relief operation — <strong>matching needs to nearby offers and official information, with a human confirming every match.</strong></p>
+    <div class="hero-cta">
+      <a class="btn btn-solid" href="#demo">Try the demo →</a>
+      <a class="btn btn-ghost" href="#arch">How it works</a>
+    </div>
+  </div>
+</header>
+
+<!-- ── DEMO ─────────────────────────────────────── -->
+<section id="demo">
+  <div class="sec-label">Interactive — how you use it</div>
+  <h2>Talk to it like a neighbour</h2>
+  <p class="sec-intro">Pick a message below and watch the agent work its loop. Everything it surfaces is <b>sourced and timestamped</b>, and nothing happens without a human pressing the button.</p>
+
+  <div class="demo-wrap">
+    <aside class="loop-rail">
+      <h3>The agent loop</h3>
+      <div class="stage" id="st-parse"><b>1 · Parse</b>need → structured fields</div>
+      <div class="stage" id="st-plan"><b>2 · Plan</b>pick sources to consult</div>
+      <div class="stage" id="st-rank"><b>3 · Rank</b>fit, proximity, recency</div>
+      <div class="stage" id="st-compose"><b>4 · Compose</b>sourced reply + actions</div>
+    </aside>
+
+    <div class="slack-window">
+      <div class="slack-bar">
+        <span class="hash">#</span><span class="title">exmouth-mutual-aid</span>
+        <span class="live">agent online</span>
+      </div>
+      <div class="thread" id="thread">
+        <div class="msg">
+          <div class="avatar bot">CN</div>
+          <div>
+            <div class="who">Crisis Navigator <span class="app-tag">APP</span><time>now</time></div>
+            <div class="text">I'm listening on this channel. Describe what you need, or what you can offer, in plain language. Pick a sample message below to see how I handle it. 👇</div>
+          </div>
+        </div>
+      </div>
+      <div class="prompt-row">
+        <div class="hint">Send a sample message</div>
+        <div class="prompts">
+          <button class="prompt" data-scn="need"><span class="tag">resident · need</span>Family of 4, North Exmouth, no power — need water and a generator</button>
+          <button class="prompt" data-scn="offer"><span class="tag">volunteer · offer</span>I've got a spare 2kW generator in town</button>
+          <button class="prompt" data-scn="safety"><span class="tag">the hard question</span>Is the road to Learmonth safe to drive?</button>
+          <button class="prompt" data-scn="clarify"><span class="tag">multi-turn · real exchange</span>We need baby formula in Exmouth town</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── ARCHITECTURE ─────────────────────────────── -->
+<section class="alt" id="arch"><div class="inner">
+  <div class="sec-label">Architecture</div>
+  <h2>Three technologies, one loop</h2>
+  <p class="sec-intro">Each required hackathon technology carries one capability — reasoning, memory, or reach. No decoration; remove any one and the product breaks.</p>
+
+  <div class="arch">
+    <div class="arch-stack">
+      <div class="arch-box" data-n="INPUT">
+        <h4>Agent surface</h4>
+        <p>Resident posts a need in the Slack thread. Split-view agent UI, suggested prompts, streaming replies.</p>
+        <span class="pill">Slack agent surface</span>
+      </div>
+      <div class="arch-box" data-n="MEMORY">
+        <h4>Workspace recall</h4>
+        <p>Prior offers, coordinator notices, resolved cases — recalled live from the workspace itself. No wiki to maintain.</p>
+        <span class="pill">Real-Time Search API</span>
+      </div>
+    </div>
+
+    <div class="arch-center">
+      <div class="arch-arrow">⇄</div>
+      <div class="arch-box" data-n="REASONING">
+        <h4>Crisis Navigator agent</h4>
+        <p>Bolt for Python + pydantic-ai. Parses to typed fields, plans sources, ranks matches, composes Block Kit replies.</p>
+        <div class="loop-tag">parse → plan → rank → compose</div>
+        <span class="pill">Bolt for Python</span><span class="pill">pydantic-ai</span><span class="pill">Gemini / Claude / GPT</span>
+      </div>
+      <div class="arch-arrow">⇄</div>
+    </div>
+
+    <div class="arch-stack">
+      <div class="arch-box" data-n="REACH">
+        <h4>External directories</h4>
+        <p>Road closures, evac centres, official warnings — pulled through MCP servers (thin mocks for the demo; the integration pattern is the point).</p>
+        <span class="pill">MCP servers</span><span class="pill">FastMCP</span>
+      </div>
+      <div class="arch-box" data-n="OUTPUT">
+        <h4>Sourced reply</h4>
+        <p>Ranked options, each stamped with who/when or feed/fetched-at, one-tap actions — and a human confirms the match. Resolved cases feed back into workspace memory.</p>
+        <span class="pill">Block Kit</span><span class="pill">Coordinator Canvas</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pillars">
+    <div class="pillar">
+      <h4>Slack AI</h4><div class="role">the reasoning + interface</div>
+      <p>Native agent surface interprets free text and runs the loop under Slack's trust and bounded-autonomy guidance.</p>
+    </div>
+    <div class="pillar">
+      <h4>Real-Time Search</h4><div class="role">the community memory</div>
+      <p>The workspace is the database. Day-one solutions answer day-three problems because every resolved case is searchable.</p>
+    </div>
+    <div class="pillar">
+      <h4>MCP</h4><div class="role">the outside world</div>
+      <p>Official feeds arrive as agent tools. Degraded feeds are declared, never papered over.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ── SEARCH DEEP-DIVE ─────────────────────────── -->
+<section id="search">
+  <div class="sec-label">Under the hood</div>
+  <h2>How the search actually works</h2>
+  <p class="sec-intro">No vector database, no embedding index on our side — two thin layers, each doing the one thing it's good at.</p>
+
+  <div class="arch" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div class="arch-box" data-n="LAYER 1 · SLACK">
+      <h4>Keyword query → Real-Time Search</h4>
+      <p>The LLM parses your message into a typed <b>Need</b>; we build a plain keyword query from it —
+      literally <code>"water generator North Exmouth"</code> —
+      and call <code>assistant.search.context</code> with a
+      user token. Slack matches server-side and returns relevance-ranked messages with author, channel,
+      timestamp, and permalink. We trust Slack's ranking as a first pass; its internals are Slack's business.</p>
+    </div>
+    <div class="arch-box" data-n="LAYER 2 · LOCAL">
+      <h4>Domain re-rank → top 5</h4>
+      <p>Pure, deterministic scoring: the match <b>must</b> share a resource word with the need
+      (location words only boost, never qualify — a generator offer "in Exmouth" is not a formula match),
+      plus linear 7-day recency. Agent-directed messages and the bot's own replies are filtered out.
+      The top 5 render with source, timestamp, permalink, and the verify note.</p>
+    </div>
+  </div>
+
+  <div class="arch" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 40px;">
+    <div class="arch-box" data-n="MCP ROLE 1 · LIVE NOW">
+      <h4>Slack's own MCP server</h4>
+      <p>The agent carries an <code>MCPServerStreamableHTTP</code>
+      toolset pointed at <code>mcp.slack.com/mcp</code>, authorized
+      with the user token. The LLM gets real workspace tools — search messages, read channels and threads,
+      manage canvases — which is why replies cite real sources and timestamps instead of inventing placeholders.</p>
+    </div>
+    <div class="arch-box" data-n="MCP ROLE 2 · EXTERNAL REACH">
+      <h4>Mock official directories</h4>
+      <p>Thin FastMCP servers backed by static JSON simulate Main Roads WA closures, DFES advice, and
+      evac-centre capacity. The agent consumes them <b>exactly like Slack's MCP server</b> — additional
+      toolsets — so the integration pattern is identical to wiring a real government feed. A downed feed
+      returns a structured error, not silence: that's guardrail 04 implemented at the protocol layer.
+      No live feeds are claimed in the demo.</p>
+    </div>
+  </div>
+
+  <div class="pillars" style="margin-top:24px; grid-template-columns: repeat(4, 1fr);">
+    <div class="pillar"><h4>API surface</h4><div class="role">vs the search bar</div>
+      <p>The search bar is classic interactive search (modifiers, pagination, UI). <span>assistant.search.context</span> is agent-built: clean structured payloads meant for LLM context.</p></div>
+    <div class="pillar"><h4>Coverage</h4><div class="role">observed, not assumed</div>
+      <p>The agent API returns <b>public channel</b> content only — it ignored offers sitting in a DM while classic search saw them. Post offers in channels.</p></div>
+    <div class="pillar"><h4>Identity</h4><div class="role">who is searching</div>
+      <p>Both run as a user. Your search bar = you; the agent's recall = the authorized user token. Visibility scopes to what that user can access.</p></div>
+    <div class="pillar"><h4>Ranking</h4><div class="role">human vs domain</div>
+      <p>The search bar ranks for browsing. Our pipeline re-ranks for the crisis domain: need-fit first, recency second, noise dropped.</p></div>
+  </div>
+</section>
+
+<!-- ── GUARDRAILS ───────────────────────────────── -->
+<section class="alt" id="rails"><div class="inner">
+  <div class="sec-label">Safety posture</div>
+  <h2>Four rules that never relax</h2>
+  <p class="sec-intro">Disaster coordination is high-stakes. These are product requirements, version-controlled in the system prompt and pinned by CI regression tests.</p>
+  <div class="rails">
+    <div class="rail"><div class="num">GUARDRAIL 01</div><h4>A human decides</h4><p>The agent surfaces and ranks. Every actionable match ends at a confirmation button — never an automatic action.</p></div>
+    <div class="rail"><div class="num">GUARDRAIL 02</div><h4>Never assert safety</h4><p>It will not say a road is safe or make a placement call. It points at official sources with a <code>verify before relying on this</code> note.</p></div>
+    <div class="rail"><div class="num">GUARDRAIL 03</div><h4>Everything is sourced</h4><p>Every item carries <code>who/when</code> (workspace) or <code>feed/fetched-at</code> (external). Trust is shown on screen, not implied.</p></div>
+    <div class="rail"><div class="num">GUARDRAIL 04</div><h4>Degraded states are loud</h4><p>A feed that's down is named. Empty results are stated. The agent never goes quiet and never fills gaps with guesses.</p></div>
+  </div>
+</div></section>
+
+<!-- ── BUILD LOG ────────────────────────────────── -->
+<section id="log">
+  <div class="sec-label">Build log</div>
+  <h2>What's built, what's next</h2>
+  <p class="sec-intro">Five-week plan to the July 13 deadline. Shipped via an agent-team pipeline — SWE implements, Tester verifies with evidence, every guardrail change re-checked, every milestone verified live in the sandbox.</p>
+  <div class="log">
+    <div class="log-item done">
+      <div class="week">Week 1 · done</div><h4>Foundation</h4>
+      <p>Sandbox provisioned, app scaffolded (Bolt + pydantic-ai), installed and verified live: reply, reactions, feedback buttons end-to-end.</p>
+    </div>
+    <div class="log-item done">
+      <div class="week">Week 2 · done — 11 days early</div><h4>Reasoning + recall</h4>
+      <div class="tasks">
+        <div class="t ok">001 — crisis system prompt + guardrail regression net (live-verified)</div>
+        <div class="t ok">002 — Need/Offer/Resolution entities + typed parsing</div>
+        <div class="t ok">003 — Real-Time Search recall + domain ranking + sourced replies</div>
+        <div class="t ok">004 — offer indexing on post (ADR-0003)</div>
+        <div class="t ok">005 — unified single reply, contact mentions, multi-turn clarify</div>
+        <div class="t ok">13 live-found bugs fixed during sandbox verification</div>
+      </div>
+    </div>
+    <div class="log-item now">
+      <div class="week">Week 3 · next</div><h4>MCP + actions</h4>
+      <p>Mock MCP servers (road closures, evac centres) and the Connect / Resolve / Escalate buttons, end-to-end.</p>
+    </div>
+    <div class="log-item">
+      <div class="week">Week 4</div><h4>Polish + safety</h4>
+      <p>Coordinator Canvas, audit log, graceful degraded-state UX, Exmouth scenario data seeded.</p>
+    </div>
+    <div class="log-item">
+      <div class="week">Week 5</div><h4>Demo + submit</h4>
+      <p>3-minute video, final diagram, judge access to the sandbox, Devpost submission.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Crisis Resource Navigator · Slack Agent Builder Challenge · deadline <span class="deadline">Jul 13 2026, 5:00 PM PT</span><br><br>
+  Built on the true isolation of Exmouth WA during STC Narelle, March 2026.
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const thread = document.getElementById("thread");
+const toast = document.getElementById("toast");
+const stages = ["parse","plan","rank","compose"].map(s => document.getElementById("st-"+s));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove("show"), 4200);
+}
+window.confirmAction = btn => {
+  showToast("You confirmed it — the agent only suggested. DM sent; case marked for the coordinator board.");
+  btn.textContent = "✓ Confirmed by you";
+  btn.disabled = true; btn.style.opacity = .6;
+};
+
+function el(html) { const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstChild; }
+function scrollEnd() { thread.lastChild?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+
+function userMsg(text) {
+  thread.appendChild(el(`
+    <div class="msg"><div class="avatar user">RS</div><div>
+      <div class="who">resident <time>now</time></div>
+      <div class="text">${text}</div><div class="react-slot"></div>
+    </div></div>`));
+  scrollEnd();
+}
+function botMsg(inner) {
+  const m = el(`
+    <div class="msg"><div class="avatar bot">CN</div><div style="flex:1">
+      <div class="who">Crisis Navigator <span class="app-tag">APP</span><time>now</time></div>
+      <div class="text">${inner}</div>
+    </div></div>`);
+  thread.appendChild(m); scrollEnd();
+  return m.querySelector(".text");
+}
+async function runStages() {
+  stages.forEach(s => s.classList.remove("active","done"));
+  for (const s of stages) {
+    s.classList.add("active");
+    await sleep(620);
+    s.classList.remove("active"); s.classList.add("done");
+  }
+}
+
+const SCN = {
+  need: {
+    user: "Family of 4, North Exmouth, no power — need water and a generator",
+    react: "👀",
+    reply: async box => {
+      box.innerHTML = `Got it. Here's what I understood:
+        <div class="parse-chips">
+          <span class="chip">need_type <b>water · generator</b></span>
+          <span class="chip">location <b>North Exmouth</b></span>
+          <span class="chip">urgency <b>high</b></span>
+          <span class="chip">household <b>4</b></span>
+        </div>`;
+      await sleep(900);
+      box.insertAdjacentHTML("beforeend",
+        `<div style="margin-top:10px;color:var(--ink-dim);font-size:14px">Checking the workspace for prior offers, and official feeds for water points…</div>`);
+      await sleep(900);
+      box.insertAdjacentHTML("beforeend", `
+        <div class="card">
+          <div class="rank"><b>match 1</b> · workspace · Real-Time Search</div>
+          <div class="what">"Spare 2kW generator in town, can lend" — posted by Mara V.</div>
+          <div class="src"><span>source: @mara · #offers</span><span>posted 2h ago</span><span>Contact: @mara</span></div>
+          <div class="verify">verify before relying on this</div>
+          <div class="actions"><button class="mini-btn primary" onclick="confirmAction(this)">Connect me</button><button class="mini-btn" onclick="confirmAction(this)">Not relevant</button></div>
+        </div>
+        <div class="card official">
+          <div class="rank"><b>match 2</b> · official · MCP feed</div>
+          <div class="what">Water point open — Exmouth Recreation Centre, bring containers</div>
+          <div class="src"><span>feed: DFES community notices</span><span>fetched 14 min ago</span></div>
+          <div class="verify">verify before relying on this</div>
+        </div>
+        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">Next step is yours: tap <b style="color:var(--green)">Connect me</b> and I'll open a DM with Mara. I don't connect anyone automatically.</div>`);
+      scrollEnd();
+    }
+  },
+  offer: {
+    user: "I've got a spare 2kW generator in town",
+    react: "👀",
+    reply: async box => {
+      box.innerHTML = `Thank you. I've recorded this offer so future requests can find it:
+        <div class="parse-chips">
+          <span class="chip">resource <b>generator 2kW</b></span>
+          <span class="chip">location <b>Exmouth town</b></span>
+          <span class="chip">status <b>open</b></span>
+        </div>`;
+      await sleep(800);
+      box.insertAdjacentHTML("beforeend", `
+        <div class="card">
+          <div class="rank"><b>indexed</b> · workspace memory</div>
+          <div class="what">Offer logged and searchable — when a matching need arrives, the requester is shown your offer and chooses to connect.</div>
+          <div class="src"><span>source: you · this channel</span><span>just now</span></div>
+        </div>
+        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">You'll only be contacted when a human confirms a match.</div>`);
+      scrollEnd();
+    }
+  },
+  clarify: {
+    user: "We need baby formula in Exmouth town",
+    react: "👀",
+    reply: async box => {
+      box.innerHTML = `I found <b>no prior offers</b> for baby formula in the workspace channels.
+        <div style="margin-top:10px">To search well, two quick questions:</div>
+        <div class="parse-chips" style="margin-top:8px">
+          <span class="chip">urgency <b>?</b></span>
+          <span class="chip">how many infants <b>?</b></span>
+        </div>`;
+      await sleep(1600);
+      userMsg("two infants, within 24 hours");
+      await sleep(500);
+      thread.lastChild.querySelector(".react-slot").innerHTML = `<span class="react">✅ 1</span>`;
+      const box2 = botMsg(`<span class="typing"><i></i><i></i><i></i></span>`);
+      await sleep(1300);
+      box2.innerHTML = `Understood — baby formula for <b>two infants</b>, needed <b>within 24 hours</b>, in Exmouth town.
+        <div class="parse-chips" style="margin-top:8px">
+          <span class="chip">need_type <b>baby formula</b></span>
+          <span class="chip">urgency <b>high · 24h</b></span>
+          <span class="chip">household <b>2 infants</b></span>
+          <span class="chip">location <b>Exmouth town</b></span>
+        </div>
+        <div style="margin-top:10px">I checked the workspace — no existing offers — and I don't have an external
+        directory that lists supply donations like formula. I won't invent options.</div>
+        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">A human should check with local relief
+        organisations directly, or post this request in the community channel. I've kept the structured need on
+        record so it matches the moment a formula offer appears.</div>`;
+      scrollEnd();
+    }
+  },
+  safety: {
+    user: "Is the road to Learmonth safe to drive?",
+    react: "👀",
+    reply: async box => {
+      box.innerHTML = `I can't tell you whether the road is safe — I don't make safety calls. Here's the latest official information so you can decide:`;
+      await sleep(850);
+      box.insertAdjacentHTML("beforeend", `
+        <div class="card warn">
+          <div class="rank"><b style="color:var(--red)">advisory</b> · official · MCP feed</div>
+          <div class="what">Minilya–Exmouth Rd: CLOSED at Yannarie River crossing. Learmonth access road: status under assessment.</div>
+          <div class="src"><span>feed: Main Roads WA closures</span><span>fetched 9 min ago</span></div>
+          <div class="verify">verify before relying on this — conditions change fast</div>
+        </div>
+        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">Check the official source above and your local coordinator before travelling. If this is an emergency, contact emergency services.</div>`);
+      scrollEnd();
+    }
+  }
+};
+
+document.querySelectorAll(".prompt").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    document.querySelectorAll(".prompt").forEach(b => b.disabled = true);
+    const scn = SCN[btn.dataset.scn];
+    userMsg(scn.user);
+    const stagesP = runStages();
+    await sleep(500);
+    thread.lastChild.querySelector(".react-slot").innerHTML = `<span class="react">${scn.react} 1</span>`;
+    const box = botMsg(`<span class="typing"><i></i><i></i><i></i></span>`);
+    await sleep(1400);
+    await scn.reply(box);
+    await stagesP;
+    document.querySelectorAll(".prompt").forEach(b => b.disabled = false);
+  });
+});
+</script>
+</body>
+</html>

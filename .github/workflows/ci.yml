@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: uv sync
+
+      - name: Lockfile up to date
+        run: uv lock --check
+
+      - name: Format check
+        run: uv run ruff format --check
+
+      - name: Lint check
+        run: uv run ruff check
+
+      # pytest exit code 5 = no tests collected — acceptable until the first test lands
+      - name: Tests
+        run: uv run pytest || test $? -eq 5
