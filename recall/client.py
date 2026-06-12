@@ -18,12 +18,14 @@ degraded states are explicit).
 
 import asyncio
 import logging
+import time
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from entities import Need
 from recall.models import RecallError, RecallMatch, match_from_message
+from recall.ranking import tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,12 @@ _SEARCH_METHOD = "assistant.search.context"
 
 # RTS caps results at 20 per page; one page is plenty for a single need's recall.
 _RESULT_LIMIT = 20
+
+# Jaccard similarity at/above which an RTS match is treated as an echo of the
+# current request text (task 014). High on purpose: this targets the observed
+# failure mode — the requester's own need re-surfacing as a near-perfect keyword
+# match — without sweeping up genuine offers that merely share resource words.
+_ECHO_JACCARD_THRESHOLD = 0.85
 
 
 def build_query(need: Need) -> str:
@@ -51,6 +59,7 @@ async def recall_offers(
     user_token: str | None,
     team_id: str | None = None,
     bot_user_id: str | None = None,
+    request_text: str = "",
 ) -> list[RecallMatch] | RecallError:
     """Search the workspace for prior offers/notices relevant to ``need``.
 
@@ -58,6 +67,11 @@ async def recall_offers(
     offers found" is a valid, non-degraded answer the caller renders explicitly)
     or a :class:`RecallError` when the search could not run. Never raises for an
     expected failure and never returns ``None``: the caller branches on the type.
+
+    ``request_text`` is the current message the requester just posted (threaded in
+    from the listener). When present it powers the need-echo filter (task 014):
+    RTS matches that are near-duplicates of the request are dropped before ranking
+    so the requester's own need never surfaces back at them as a "prior offer".
     """
     if not user_token:
         logger.info("RTS recall skipped: no user token (search:read.* unavailable)")
@@ -67,6 +81,7 @@ async def recall_offers(
         )
 
     query = build_query(need)
+    started = time.monotonic()
     try:
         response = await asyncio.to_thread(
             client.api_call,
@@ -84,12 +99,26 @@ async def recall_offers(
         return RecallError(reason="request_failed", detail=str(exc))
 
     messages = response.get("results", {}).get("messages", []) or []
+    raw_count = len(messages)
     try:
         matches = [match_from_message(message) for message in messages]
     except (KeyError, TypeError, ValueError) as exc:
         logger.warning("RTS recall returned an unparseable message: %s", exc)
         return RecallError(reason="malformed_response", detail=str(exc))
-    return _drop_agent_noise(matches, bot_user_id)
+
+    filtered = _drop_need_echoes(_drop_agent_noise(matches, bot_user_id), request_text)
+    latency_ms = (time.monotonic() - started) * 1000.0
+    # Observability (task 012 addendum): one line per RTS turn — what we searched,
+    # how long it took, and how many hits survived filtering. INFO so it shows in
+    # normal operation alongside the W4 audit work.
+    logger.info(
+        "RTS recall: query=%r latency=%.0fms raw=%d post_filter=%d",
+        query,
+        latency_ms,
+        raw_count,
+        len(filtered),
+    )
+    return filtered
 
 
 def _drop_agent_noise(matches: list[RecallMatch], bot_user_id: str | None) -> list[RecallMatch]:
@@ -116,3 +145,36 @@ def _drop_agent_noise(matches: list[RecallMatch], bot_user_id: str | None) -> li
         seen[key] = len(filtered)
         filtered.append(match)
     return filtered
+
+
+def _drop_need_echoes(matches: list[RecallMatch], request_text: str) -> list[RecallMatch]:
+    """Drop RTS matches that are near-duplicates of the current request text.
+
+    The observed failure (live, 2026-06-12): a requester's own earlier *need*
+    message ("Family of 4... need water and a generator") surfaces as a top match
+    because it shares almost every keyword with the current request — but it is a
+    need, not an offer. We compare ``tokenize()`` sets (the same tokeniser RTS
+    ranking and the offer index use) and drop any match whose Jaccard similarity to
+    the request is at/above :data:`_ECHO_JACCARD_THRESHOLD`.
+
+    Honest limitation (documented in task 014): this removes *echoes* of the
+    current request, not arbitrary foreign needs. Distinguishing an unrelated need
+    from an offer in RTS results would need per-result classification (an LLM call
+    per hit — costly); near-duplicate filtering is the cheap, no-call cover for the
+    one failure mode we actually saw. With no ``request_text`` nothing is dropped.
+    """
+    request_tokens = tokenize(request_text)
+    if not request_tokens:
+        return matches
+    kept: list[RecallMatch] = []
+    for match in matches:
+        match_tokens = tokenize(match.text)
+        union = request_tokens | match_tokens
+        if not union:
+            kept.append(match)
+            continue
+        jaccard = len(request_tokens & match_tokens) / len(union)
+        if jaccard >= _ECHO_JACCARD_THRESHOLD:
+            continue  # an echo of the requester's own message — not a prior offer
+        kept.append(match)
+    return kept

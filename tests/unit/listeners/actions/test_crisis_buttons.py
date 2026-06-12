@@ -23,6 +23,7 @@ from entities import Offer, Status
 from listeners.actions import crisis_buttons
 from matching.audit import AuditTrail
 from matching.index import OfferIndex
+from recall.dismissals import DismissalStore, match_identity
 from recall.payload import ConnectPayload
 
 
@@ -33,6 +34,13 @@ def _patch_singletons(mocker: MockerFixture) -> tuple[OfferIndex, AuditTrail]:
     mocker.patch.object(crisis_buttons, "offer_index", index)
     mocker.patch.object(crisis_buttons, "audit_trail", trail)
     return index, trail
+
+
+def _patch_dismissals(mocker: MockerFixture) -> DismissalStore:
+    """Swap the module-level dismissal store for a fresh, isolated instance."""
+    store = DismissalStore()
+    mocker.patch.object(crisis_buttons, "dismissal_store", store)
+    return store
 
 
 def _client(mocker: MockerFixture) -> object:
@@ -322,6 +330,7 @@ def test_not_relevant_records_audit_event(
 ) -> None:
     """A dismissal appends one audit event with the not_relevant action."""
     _, trail = _patch_singletons(mocker)
+    _patch_dismissals(mocker)
 
     crisis_buttons.handle_crisis_not_relevant(
         ack=mocker.Mock(),
@@ -331,6 +340,46 @@ def test_not_relevant_records_audit_event(
     )
 
     assert [e.action for e in trail.list_events()] == ["not_relevant"]
+
+
+def test_not_relevant_records_dismissal_for_the_clicker(
+    mocker: MockerFixture,
+    make_action_body: Callable[..., dict],
+) -> None:
+    """Dismissing writes the (clicker, match identity) pair into the dismissal store (015)."""
+    _patch_singletons(mocker)
+    store = _patch_dismissals(mocker)
+    payload = ConnectPayload(
+        offerer_id="U_OFFERER", offer_id="uuid-123", permalink="https://x/p1", snippet="x"
+    )
+    body = make_action_body(action_id="crisis_not_relevant", clicker="U_REQUESTER", payload=payload)
+
+    crisis_buttons.handle_crisis_not_relevant(
+        ack=mocker.Mock(), body=body, client=mocker.Mock(), logger=mocker.Mock()
+    )
+
+    # Identity follows offer_id -> permalink -> text; this payload has an offer id.
+    identity = match_identity(offer_id="uuid-123", permalink="https://x/p1", text="x")
+    assert store.is_dismissed("U_REQUESTER", identity) is True
+
+
+def test_not_relevant_dismissal_is_keyed_to_the_clicker_only(
+    mocker: MockerFixture,
+    make_action_body: Callable[..., dict],
+) -> None:
+    """The dismissal binds to the clicker — a different user is not marked dismissed (015)."""
+    _patch_singletons(mocker)
+    store = _patch_dismissals(mocker)
+    payload = ConnectPayload(offerer_id="U_OFFERER", permalink="https://x/p1", snippet="x")
+    body = make_action_body(action_id="crisis_not_relevant", clicker="U_A", payload=payload)
+
+    crisis_buttons.handle_crisis_not_relevant(
+        ack=mocker.Mock(), body=body, client=mocker.Mock(), logger=mocker.Mock()
+    )
+
+    identity = match_identity(permalink="https://x/p1")
+    assert store.is_dismissed("U_A", identity) is True
+    assert store.is_dismissed("U_B", identity) is False
 
 
 # ----- malformed payload (degraded) -----

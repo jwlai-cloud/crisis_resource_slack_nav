@@ -32,10 +32,21 @@ from agent.parsing import parse_message
 from entities import Need, Offer
 from matching import build_offer_ack_blocks, match_from_offer, offer_index
 from recall import RecallError, RecallMatch, build_recall_blocks, rank_matches, recall_offers
+from recall.dismissals import dismissal_store
 
 logger = logging.getLogger(__name__)
 
 _RECALL_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
+
+# The LLM context mirrors the on-screen blocks: both show the top 5 matches. Sending
+# the model the full ranked list with untruncated text (task 012 addendum) wastes
+# tokens it never renders, so we cap the serialised context to the same 5.
+_CONTEXT_MAX_MATCHES = 5
+
+# Each match's snippet is truncated to roughly this many characters in the LLM
+# context — enough to reason and rank over, without paying for a wall of text the
+# model only summarises. Truncated snippets get a trailing ellipsis.
+_CONTEXT_SNIPPET_MAX = 200
 
 
 @dataclass(frozen=True)
@@ -71,6 +82,7 @@ def _post_offer_ack(offer: Offer, *, thread_ts: str, say: Say) -> None:
 def _merge_recall_results(
     need: Need,
     rts_result: list[RecallMatch] | RecallError,
+    requester_id: str,
 ) -> list[RecallMatch] | RecallError:
     """Merge index hits with the RTS result into one ranked list (or a RecallError).
 
@@ -81,15 +93,21 @@ def _merge_recall_results(
     through to the degraded reply when the index is empty too. When RTS succeeds,
     both sets are concatenated and ranked together so they share one ordering and
     relevance gate.
+
+    Before ranking, matches this ``requester_id`` previously dismissed via "Not
+    relevant" are filtered out (task 015): a dismissal is a per-user "not this one"
+    signal, so a fresh need never resurfaces a match the same requester already
+    waved off. The filter is per-user — another requester still sees it.
     """
     index_matches = [match_from_offer(offer) for offer in offer_index.keyword_lookup(need)]
 
     if isinstance(rts_result, RecallError):
         if index_matches:
-            return rank_matches(need, index_matches, datetime.now(UTC))
+            kept = dismissal_store.filter_dismissed(requester_id, index_matches)
+            return rank_matches(need, kept, datetime.now(UTC))
         return rts_result
 
-    combined = index_matches + rts_result
+    combined = dismissal_store.filter_dismissed(requester_id, index_matches + rts_result)
     return rank_matches(need, combined, datetime.now(UTC))
 
 
@@ -114,16 +132,34 @@ def serialize_recall_context(result: list[RecallMatch] | RecallError) -> str:
             "Say so plainly; do not invent matches."
         )
 
-    lines = [f"{len(result)} prior offer(s) found, ranked best-fit first:"]
-    for index, match in enumerate(result, start=1):
+    # Cap at the same top-N the blocks render (task 012 addendum): the model never
+    # surfaces matches beyond what is on screen, so sending them only burns tokens.
+    shown = result[:_CONTEXT_MAX_MATCHES]
+    lines = [f"{len(shown)} prior offer(s) shown, ranked best-fit first:"]
+    for index, match in enumerate(shown, start=1):
         contact = f"<@{match.author_id}>" if match.author_id else match.author or "unknown"
         when = match.ts.strftime(_RECALL_TIMESTAMP_FORMAT)
         channel = f"#{match.channel}" if match.channel else "unknown channel"
-        snippet = match.text.strip().replace("\n", " ")
+        snippet = _truncate_snippet(match.text.strip().replace("\n", " "))
         lines.append(
             f"{index}. contact={contact} · channel={channel} · when={when} · text={snippet!r}"
         )
+    extra = len(result) - len(shown)
+    if extra > 0:
+        lines.append(f"(+{extra} more found)")
     return "\n".join(lines)
+
+
+def _truncate_snippet(text: str) -> str:
+    """Trim a match snippet to ``_CONTEXT_SNIPPET_MAX`` chars, marking truncation.
+
+    Keeps the LLM context cheap (task 012 addendum) without dropping the snippet
+    entirely: a truncated snippet ends with an ellipsis so the model knows it is a
+    head, not the full text. Short snippets pass through unchanged.
+    """
+    if len(text) <= _CONTEXT_SNIPPET_MAX:
+        return text
+    return text[:_CONTEXT_SNIPPET_MAX].rstrip() + "…"
 
 
 def route_message(
@@ -166,8 +202,10 @@ def route_message(
         return None
 
     need: Need = parsed
-    rts_result = asyncio.run(recall_offers(need, client, user_token, team_id, bot_user_id))
-    result = _merge_recall_results(need, rts_result)
+    rts_result = asyncio.run(
+        recall_offers(need, client, user_token, team_id, bot_user_id, request_text=text)
+    )
+    result = _merge_recall_results(need, rts_result, requester_id=author)
 
     logger.info("Recalled context for need: %s in %s", need.need_type, need.location)
     return NeedRecall(

@@ -30,6 +30,7 @@ from slack_sdk import WebClient
 from entities import Offer, Status
 from matching import audit_trail, offer_index
 from recall import ACTION_CONNECT, ACTION_NOT_RELEVANT, ACTION_RESOLVE, ConnectPayload
+from recall.dismissals import dismissal_store, match_identity
 
 # Audit action labels (kept distinct from the Slack action_ids so the trail reads
 # as plain verbs).
@@ -267,12 +268,15 @@ def handle_crisis_resolve(ack: Ack, body: dict, client: WebClient, logger: Logge
 
 
 def handle_crisis_not_relevant(ack: Ack, body: dict, client: WebClient, logger: Logger) -> None:
-    """Dismiss a match: mute its button row and record the signal.
+    """Dismiss a match: mute its button row, audit it, and remember the dismissal.
 
     No connection, no index change — dismissing is just the human saying "not this
     one". The card's buttons collapse to a muted Dismissed note so it's clear the
-    action registered (never a silent click), and the signal is audited for future
-    rank tuning.
+    action registered (never a silent click), the signal is audited, and the
+    dismissal is recorded per-user in the :data:`dismissal_store` (task 015) keyed
+    on the match identity (offer id -> permalink -> snippet-text hash). A later
+    need from the *same* requester then filters this match out instead of
+    resurfacing it with fresh buttons.
     """
     ack()
     payload = _parse_payload(body, client, logger)
@@ -281,6 +285,10 @@ def handle_crisis_not_relevant(ack: Ack, body: dict, client: WebClient, logger: 
 
     actor = (body.get("user") or {}).get("id", "")
     audit_trail.record(actor_id=actor, action=_AUDIT_NOT_RELEVANT, target=_offer_target(payload))
+    identity = match_identity(
+        offer_id=payload.offer_id, permalink=payload.permalink, text=payload.snippet
+    )
+    dismissal_store.dismiss(actor, identity)
     logger.info("Match dismissed by %s: %s", actor, _offer_target(payload))
 
     block_id = body["actions"][0].get("block_id", "")

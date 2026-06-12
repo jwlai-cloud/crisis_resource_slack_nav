@@ -12,6 +12,7 @@ contract that powers the single-reply UX (task 005):
 * A degraded recall still yields an explicit context + "search unavailable" block.
 """
 
+import re
 from datetime import UTC, datetime
 
 from pytest_mock import MockerFixture
@@ -20,6 +21,7 @@ from entities import Need, Offer, Urgency, deterministic_id
 from listeners import recall_reply
 from listeners.recall_reply import NeedRecall
 from matching.index import OfferIndex
+from recall.dismissals import DismissalStore, identity_of
 from recall.models import RecallError, RecallMatch
 
 NEED_TS = datetime(2026, 3, 21, 11, 30, tzinfo=UTC)
@@ -231,6 +233,42 @@ def test_need_surfaces_index_hits_when_rts_degraded(mocker: MockerFixture) -> No
     assert "collect any time today" in section_texts
 
 
+def test_need_filters_out_a_match_this_requester_dismissed(mocker: MockerFixture) -> None:
+    """A match the requester previously dismissed is gone from their fresh recall (015)."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_need())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply, "recall_offers", new=mocker.AsyncMock(return_value=[_match()])
+    )
+    store = DismissalStore()
+    store.dismiss("U_REQ", identity_of(_match()))  # U_REQ waved this match off earlier
+    mocker.patch.object(recall_reply, "dismissal_store", store)
+    say = mocker.Mock()
+
+    outcome = _route(say, text="need a generator in Exmouth", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    assert outcome.result == []  # the dismissed match is filtered before ranking
+
+
+def test_dismissal_is_per_user_other_requester_still_sees_match(mocker: MockerFixture) -> None:
+    """U_A's dismissal does not hide the match from U_B (per-user isolation, 015)."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_need())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply, "recall_offers", new=mocker.AsyncMock(return_value=[_match()])
+    )
+    store = DismissalStore()
+    store.dismiss("U_A", identity_of(_match()))
+    mocker.patch.object(recall_reply, "dismissal_store", store)
+    say = mocker.Mock()
+
+    outcome = _route(say, text="need a generator in Exmouth", author="U_B", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    assert outcome.result == [_match()]  # U_B never dismissed it -> still surfaced
+
+
 def test_serialize_recall_context_matches_lists_contact_and_timestamp() -> None:
     """The LLM context lists each match with a tappable contact mention and timestamp."""
     context = recall_reply.serialize_recall_context([_match()])
@@ -254,3 +292,69 @@ def test_serialize_recall_context_empty_says_none_found() -> None:
 
     assert "no prior offers" in context.lower()
     assert "do not invent" in context.lower()
+
+
+def _many_matches(count: int, *, text: str = "spare generator in Exmouth") -> list[RecallMatch]:
+    """A list of ``count`` distinct RecallMatches (distinct permalinks/text)."""
+    return [
+        RecallMatch(
+            text=f"{text} #{i}",
+            author="Jordan",
+            author_id="U1",
+            channel="offers",
+            channel_id="C1",
+            ts=datetime(2026, 3, 21, 9, 30, tzinfo=UTC),
+            permalink=f"https://x/p{i}",
+        )
+        for i in range(count)
+    ]
+
+
+def test_serialize_recall_context_caps_at_five_matches() -> None:
+    """The LLM context lists at most 5 matches — the same top-N the blocks render (012)."""
+    context = recall_reply.serialize_recall_context(_many_matches(8))
+
+    numbered = [line for line in context.splitlines() if re.match(r"^\d+\. contact=", line)]
+    assert len(numbered) == 5  # capped, not all 8
+
+
+def test_serialize_recall_context_appends_plus_n_more_when_truncated() -> None:
+    """When matches exceed the cap, a '(+N more found)' line is appended (012)."""
+    context = recall_reply.serialize_recall_context(_many_matches(8))
+
+    assert "(+3 more found)" in context  # 8 found - 5 shown = 3
+
+
+def test_serialize_recall_context_no_plus_n_line_when_within_cap() -> None:
+    """At or below the cap there is no '(+N more found)' line."""
+    context = recall_reply.serialize_recall_context(_many_matches(3))
+
+    assert "more found" not in context
+
+
+def test_serialize_recall_context_truncates_long_snippets() -> None:
+    """A long match snippet is truncated to ~200 chars with a trailing ellipsis (012)."""
+    long_text = "water " * 200  # ~1200 chars, well over the snippet cap
+    match = RecallMatch(
+        text=long_text,
+        author="Jordan",
+        author_id="U1",
+        channel="offers",
+        channel_id="C1",
+        ts=datetime(2026, 3, 21, 9, 30, tzinfo=UTC),
+        permalink="https://x/p1",
+    )
+
+    context = recall_reply.serialize_recall_context([match])
+
+    assert "…" in context  # truncation marker present
+    # The rendered snippet is bounded (cap + ellipsis), far short of the raw text.
+    assert len(context) < len(long_text)
+
+
+def test_serialize_recall_context_keeps_short_snippets_intact() -> None:
+    """A short snippet is rendered in full, with no ellipsis."""
+    context = recall_reply.serialize_recall_context([_match()])
+
+    assert "spare generator in Exmouth" in context
+    assert "…" not in context
