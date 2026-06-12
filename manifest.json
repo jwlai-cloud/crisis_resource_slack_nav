@@ -19,7 +19,8 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "https://ngrok-free.app/slack/oauth_redirect"
+      "https://ngrok-free.app/slack/oauth_redirect",
+      "https://localhost/"
     ],
     "scopes": {
       "user": [
