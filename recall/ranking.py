@@ -41,14 +41,23 @@ _STOPWORDS = frozenset(
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
 
-def _tokens(text: str) -> set[str]:
-    """Lowercase word tokens with stopwords and 1-char tokens removed."""
+def tokenize(text: str) -> set[str]:
+    """Lowercase word tokens with stopwords and 1-char tokens removed.
+
+    The one place token extraction lives: RTS keyword-overlap scoring and the
+    in-memory offer index (``matching.index``) both call this so "overlap" means
+    exactly the same thing across both match sources.
+    """
     return {w for w in _WORD_RE.findall(text.lower()) if len(w) > 1 and w not in _STOPWORDS}
+
+
+# Internal alias kept for the existing call sites in this module.
+_tokens = tokenize
 
 
 def need_keywords(need: Need) -> set[str]:
     """The keyword set a recall match is scored against: need_type + location."""
-    return _tokens(f"{need.need_type} {need.location}")
+    return tokenize(f"{need.need_type} {need.location}")
 
 
 def keyword_overlap(need: Need, match: RecallMatch) -> float:

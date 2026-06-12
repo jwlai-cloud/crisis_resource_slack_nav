@@ -15,7 +15,7 @@ The *plan -> rank -> compose* slice of the agent loop for in-workspace memory
 from recall.blocks import VERIFY_NOTE, build_recall_blocks
 from recall.client import build_query, recall_offers
 from recall.models import RecallError, RecallMatch, match_from_message
-from recall.ranking import rank_matches, score_match
+from recall.ranking import need_keywords, rank_matches, score_match, tokenize
 
 __all__ = [
     "VERIFY_NOTE",
@@ -24,7 +24,9 @@ __all__ = [
     "build_query",
     "build_recall_blocks",
     "match_from_message",
+    "need_keywords",
     "rank_matches",
     "recall_offers",
     "score_match",
+    "tokenize",
 ]
