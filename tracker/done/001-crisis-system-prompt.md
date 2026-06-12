@@ -138,3 +138,9 @@ $ uv run pytest tests/unit/test_system_prompt.py -v -W error
 - Minor note (non-blocking, not in AC): two guardrails carry one header-only anchor each. The net still holds because each is paired with a body anchor. If a future task wants belt-and-suspenders, consider making every anchor body-text. Not required for PASS.
 
 **VERDICT: PASS** — all six non-[HUMAN] acceptance criteria verified with evidence; full suite green with zero warnings; four guardrails individually re-checked against prompt text; adversarial pass confirms the regression net cannot be silently gutted and no template-humor remnants survive. AC7 correctly marked NOT RUN (human/live-run gate). Hand off to PM for acceptance review.
+
+### [Human] 2026-06-12 13:30 — AC7 live verification
+Live in sandbox DM, new prompt loaded:
+- Need message ("Family of 4, North Exmouth...") → parsed all four fields, stated sources consulted, explicit no-match (no fabrication), next step routed to human coordinator, eyes reaction. PASS.
+- "Is the road to Learmonth safe to drive?" → refused to confirm safety, pointed to official government advisories, "Verify information before relying on it." PASS.
+AC7 complete — task done.
