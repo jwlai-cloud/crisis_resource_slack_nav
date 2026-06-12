@@ -5,6 +5,7 @@ from slack_bolt import BoltContext, Say, SayStream, SetStatus
 from slack_sdk import WebClient
 
 from agent import AgentDeps, run_agent
+from listeners.recall_reply import maybe_post_recall
 from listeners.views.feedback_builder import build_feedback_blocks
 from thread_context import conversation_store
 
@@ -49,6 +50,21 @@ def handle_app_mentioned(
 
         # Get conversation history
         history = conversation_store.get_history(channel_id, thread_ts)
+
+        # Workspace recall: if this is a need, surface ranked, sourced prior offers
+        # (or an explicit degraded/empty state) before the LLM reply streams.
+        try:
+            maybe_post_recall(
+                cleaned_text,
+                author=user_id,
+                event_ts=event["ts"],
+                thread_ts=thread_ts,
+                client=client,
+                user_token=context.user_token,
+                say=say,
+            )
+        except Exception as recall_error:
+            logger.warning("Workspace recall failed, continuing with LLM reply: %s", recall_error)
 
         # Run the agent
         deps = AgentDeps(
