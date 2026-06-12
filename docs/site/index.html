@@ -456,6 +456,24 @@
     </div>
   </div>
 
+  <div class="arch" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 40px;">
+    <div class="arch-box" data-n="MCP ROLE 1 · LIVE NOW">
+      <h4>Slack's own MCP server</h4>
+      <p>The agent carries an <code style="font-family:var(--mono);color:var(--amber)">MCPServerStreamableHTTP</code>
+      toolset pointed at <code style="font-family:var(--mono);color:var(--amber)">mcp.slack.com/mcp</code>, authorized
+      with the user token. The LLM gets real workspace tools — search messages, read channels and threads,
+      manage canvases — which is why replies cite real sources and timestamps instead of inventing placeholders.</p>
+    </div>
+    <div class="arch-box" data-n="MCP ROLE 2 · EXTERNAL REACH">
+      <h4>Mock official directories</h4>
+      <p>Thin FastMCP servers backed by static JSON simulate Main Roads WA closures, DFES advice, and
+      evac-centre capacity. The agent consumes them <b>exactly like Slack's MCP server</b> — additional
+      toolsets — so the integration pattern is identical to wiring a real government feed. A downed feed
+      returns a structured error, not silence: that's guardrail 04 implemented at the protocol layer.
+      No live feeds are claimed in the demo.</p>
+    </div>
+  </div>
+
   <div class="pillars" style="margin-top:24px; grid-template-columns: repeat(4, 1fr);">
     <div class="pillar"><h4>API surface</h4><div class="role">vs the search bar</div>
       <p>The search bar is classic interactive search (modifiers, pagination, UI). <span style="font-family:var(--mono);font-size:12px">assistant.search.context</span> is agent-built: clean structured payloads meant for LLM context.</p></div>
