@@ -84,10 +84,15 @@ def score_match(need: Need, match: RecallMatch, now: datetime) -> float:
 def rank_matches(need: Need, matches: list[RecallMatch], now: datetime) -> list[RecallMatch]:
     """Return ``matches`` ordered best-fit first for ``need``.
 
+    Matches with zero keyword overlap are dropped entirely: recency alone must
+    never surface an irrelevant post (live testing floated Wordle scores into a
+    water-and-generator request on recency score alone).
+
     Sort key: combined score desc, then recency desc, then text — so equal-scoring
     matches order deterministically and snapshot tests stay stable.
     """
+    relevant = [m for m in matches if keyword_overlap(need, m) > 0.0]
     return sorted(
-        matches,
+        relevant,
         key=lambda m: (-score_match(need, m, now), -m.ts.timestamp(), m.text),
     )

@@ -103,7 +103,8 @@ def test_rank_orders_best_fit_first(
     ranked = rank_matches(need, [irrelevant, weak_relevant, strong], now)
 
     assert ranked[0] is strong
-    assert ranked[-1] is irrelevant
+    assert ranked[-1] is weak_relevant
+    assert irrelevant not in ranked  # zero-overlap matches are dropped, not ranked last
 
 
 def test_rank_is_stable_for_equal_scores(
@@ -113,10 +114,10 @@ def test_rank_is_stable_for_equal_scores(
 ) -> None:
     """Equal-scoring matches order deterministically (recency desc, then text)."""
     need = make_need(need_type="water", location="Exmouth")
-    # Neither mentions the keywords -> equal overlap (0); same ts -> equal recency.
-    a = make_match(text="aaa unrelated", ts=now)
-    b = make_match(text="bbb unrelated", ts=now)
+    # Both mention "water" only -> equal overlap; same ts -> equal recency.
+    a = make_match(text="water aaa", ts=now)
+    b = make_match(text="water bbb", ts=now)
 
     ranked = rank_matches(need, [b, a], now)
 
-    assert [m.text for m in ranked] == ["aaa unrelated", "bbb unrelated"]
+    assert [m.text for m in ranked] == ["water aaa", "water bbb"]
