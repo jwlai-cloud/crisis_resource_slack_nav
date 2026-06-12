@@ -364,6 +364,7 @@
           <button class="prompt" data-scn="need"><span class="tag">resident · need</span>Family of 4, North Exmouth, no power — need water and a generator</button>
           <button class="prompt" data-scn="offer"><span class="tag">volunteer · offer</span>I've got a spare 2kW generator in town</button>
           <button class="prompt" data-scn="safety"><span class="tag">the hard question</span>Is the road to Learmonth safe to drive?</button>
+          <button class="prompt" data-scn="clarify"><span class="tag">multi-turn · real exchange</span>We need baby formula in Exmouth town</button>
         </div>
       </div>
     </div>
@@ -639,6 +640,37 @@ const SCN = {
           <div class="src"><span>source: you · this channel</span><span>just now</span></div>
         </div>
         <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">You'll only be contacted when a human confirms a match.</div>`);
+      scrollEnd();
+    }
+  },
+  clarify: {
+    user: "We need baby formula in Exmouth town",
+    react: "👀",
+    reply: async box => {
+      box.innerHTML = `I found <b>no prior offers</b> for baby formula in the workspace channels.
+        <div style="margin-top:10px">To search well, two quick questions:</div>
+        <div class="parse-chips" style="margin-top:8px">
+          <span class="chip">urgency <b>?</b></span>
+          <span class="chip">how many infants <b>?</b></span>
+        </div>`;
+      await sleep(1600);
+      userMsg("two infants, within 24 hours");
+      await sleep(500);
+      thread.lastChild.querySelector(".react-slot").innerHTML = `<span class="react">✅ 1</span>`;
+      const box2 = botMsg(`<span class="typing"><i></i><i></i><i></i></span>`);
+      await sleep(1300);
+      box2.innerHTML = `Understood — baby formula for <b>two infants</b>, needed <b>within 24 hours</b>, in Exmouth town.
+        <div class="parse-chips" style="margin-top:8px">
+          <span class="chip">need_type <b>baby formula</b></span>
+          <span class="chip">urgency <b>high · 24h</b></span>
+          <span class="chip">household <b>2 infants</b></span>
+          <span class="chip">location <b>Exmouth town</b></span>
+        </div>
+        <div style="margin-top:10px">I checked the workspace — no existing offers — and I don't have an external
+        directory that lists supply donations like formula. I won't invent options.</div>
+        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">A human should check with local relief
+        organisations directly, or post this request in the community channel. I've kept the structured need on
+        record so it matches the moment a formula offer appears.</div>`;
       scrollEnd();
     }
   },
