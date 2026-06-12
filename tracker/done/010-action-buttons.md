@@ -166,3 +166,10 @@ $ (manifest)        valid JSON; bot-scope delta = +"mpim:write" only
 - Payload value cap is robust for realistic input (snippet dropped if needed), but a pathological multi-thousand-char `permalink` alone could still exceed 2000 chars since only the snippet is droppable. Real Slack permalinks are well under 200 chars, so unreachable in practice — noted only for completeness.
 
 **VERDICT: PASS** — all eight implementable ACs verified with code + runtime evidence; full suite green twice over with zero warnings; e2e adversarial pass green on every break path; all four guardrails re-checked and hold (guardrail 1 confirmation step is real, requester is the clicker only, nothing auto-acts). AC9 is [HUMAN] and awaits live `slack run` verification. The three "Other issues" are non-blocking notes, not defects.
+
+### [Human] 2026-06-12 21:24 — AC9 live verification (PASS)
+Live in sandbox: match card rendered with Connect me / Not relevant + full sourcing;
+Connect click posted the sourced intro with original-message link (self-connect
+collapsed to the bot DM as expected — real group DM deferred to the Mara persona,
+task 013) and the card flipped to "✅ Connected — Mark resolved". Resolve transition
+exercised; handler behavior covered by 185-test suite incl. concurrency.
