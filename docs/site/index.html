@@ -431,6 +431,43 @@
   </div>
 </section>
 
+<!-- ── SEARCH DEEP-DIVE ─────────────────────────── -->
+<section id="search">
+  <div class="sec-label">Under the hood</div>
+  <h2>How the search actually works</h2>
+  <p class="sec-intro">No vector database, no embedding index on our side — two thin layers, each doing the one thing it's good at.</p>
+
+  <div class="arch" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div class="arch-box" data-n="LAYER 1 · SLACK">
+      <h4>Keyword query → Real-Time Search</h4>
+      <p>The LLM parses your message into a typed <b>Need</b>; we build a plain keyword query from it —
+      literally <code style="font-family:var(--mono);color:var(--amber)">"water generator North Exmouth"</code> —
+      and call <code style="font-family:var(--mono);color:var(--amber)">assistant.search.context</code> with a
+      user token. Slack matches server-side and returns relevance-ranked messages with author, channel,
+      timestamp, and permalink. We trust Slack's ranking as a first pass; its internals (semantic or not)
+      are Slack's business.</p>
+    </div>
+    <div class="arch-box" data-n="LAYER 2 · LOCAL">
+      <h4>Domain re-rank → top 5</h4>
+      <p>Pure, deterministic scoring: keyword overlap against the need's type + location tokens
+      (weight 0.7) plus linear 7-day recency (0.3). Anything with <b>zero</b> overlap is dropped —
+      recency alone never surfaces an irrelevant post (a real Wordle score taught us that).
+      The top 5 render with source, timestamp, permalink, and the verify note.</p>
+    </div>
+  </div>
+
+  <div class="pillars" style="margin-top:24px; grid-template-columns: repeat(4, 1fr);">
+    <div class="pillar"><h4>API surface</h4><div class="role">vs the search bar</div>
+      <p>The search bar is classic interactive search (modifiers, pagination, UI). <span style="font-family:var(--mono);font-size:12px">assistant.search.context</span> is agent-built: clean structured payloads meant for LLM context.</p></div>
+    <div class="pillar"><h4>Coverage</h4><div class="role">observed, not assumed</div>
+      <p>The agent API returns <b>public channel</b> content only — it ignored offers sitting in a DM while classic search saw them. Post offers in channels.</p></div>
+    <div class="pillar"><h4>Identity</h4><div class="role">who is searching</div>
+      <p>Both run as a user. Your search bar = you; the agent's recall = the authorized user token. Visibility scopes to what that user can access.</p></div>
+    <div class="pillar"><h4>Ranking</h4><div class="role">human vs domain</div>
+      <p>The search bar ranks for browsing. Our pipeline re-ranks for the crisis domain: need-fit first, recency second, noise dropped.</p></div>
+  </div>
+</section>
+
 <!-- ── GUARDRAILS ───────────────────────────────── -->
 <section id="rails">
   <div class="sec-label">Safety posture</div>
