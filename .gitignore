@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+
+# Slack CLI local state — verify exact paths after `slack create agent`
+# (the template ships its own .gitignore entries; merge them here)
+.slack/cache/

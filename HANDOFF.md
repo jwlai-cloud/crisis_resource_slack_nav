@@ -49,6 +49,18 @@ Bridge from the design phase (done in chat) into the Claude Code build sessions.
 4. **W4 — Polish + safety:** coordinator Canvas + audit log; sourcing/timestamps/verify framing; bounded-autonomy confirm; seed Exmouth data.
 5. **W5 — Demo + submit:** record video, finalize diagram + write-up, grant sandbox access to required reviewer emails, submit.
 
+## Submission requirements (from hackathon welcome email, 2026-06-11)
+
+Deadline: **July 13, 2026, 5:00 PM PT** (editable until then). Every submission needs:
+
+- Working Slack app installed in the developer sandbox.
+- Text description (what it does + impact).
+- ~3-min demo video, public on YouTube or Vimeo.
+- Architecture diagram uploaded via Devpost file upload.
+- Sandbox URL with **Member access granted to `slackhack@salesforce.com` and `testing@devpost.com`**.
+
+Do early: open the Devpost submission form now (no finished project needed); join `#slack-agent-builder-challenge`.
+
 ## Open items to resolve early (not blockers, but do them soon)
 
 - Confirm sandbox is live and you can `slack run` a hello-world agent before investing in structure.
