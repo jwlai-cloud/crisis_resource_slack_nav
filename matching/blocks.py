@@ -21,8 +21,14 @@ from slack_sdk.models.blocks import (
 )
 
 from entities import Offer
+from recall.blocks import WORKSPACE_BAR_EMOJI
 
 _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
+
+# The ack opens with the same colored-square rank-label cue as the recall cards
+# (task 008 visual parity), mirroring the mock's offer card: green = workspace.
+# An indexed offer is "workspace memory" — searchable, but not yet a match.
+INDEXED_RANK_LABEL = f"{WORKSPACE_BAR_EMOJI} *INDEXED* · WORKSPACE MEMORY"
 
 _CONFIRMATION = (
     ":white_check_mark: Logged your offer — I'll surface it when someone nearby "
@@ -57,11 +63,13 @@ def _source_line(offer: Offer) -> str:
 def build_offer_ack_blocks(offer: Offer) -> list[Block]:
     """Compose the informational acknowledgement for a freshly indexed offer.
 
-    Two blocks: a confirmation section (no actions) and a sourcing context line
-    carrying the offerer and the timestamp — the offer is sourced and timestamped
-    on screen, never silently swallowed.
+    Three blocks: the workspace rank-label cue (matching the recall cards / mock),
+    a confirmation section (no actions), and a sourcing context line carrying the
+    offerer and the timestamp — the offer is sourced and timestamped on screen,
+    never silently swallowed.
     """
     return [
+        ContextBlock(elements=[MarkdownTextObject(text=INDEXED_RANK_LABEL)]),
         SectionBlock(text=MarkdownTextObject(text=_CONFIRMATION)),
         ContextBlock(elements=[MarkdownTextObject(text=_source_line(offer))]),
     ]

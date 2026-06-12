@@ -141,8 +141,13 @@ def test_need_with_degraded_recall_returns_unavailable(mocker: MockerFixture) ->
     say.assert_not_called()
     assert isinstance(outcome, NeedRecall)
     assert isinstance(outcome.result, RecallError)
-    text = outcome.blocks[0].to_dict()["text"]["text"].lower()
-    assert "couldn't search the workspace" in text
+    # The parse summary leads; the degraded 'search unavailable' block follows it.
+    section_texts = " ".join(
+        block.to_dict().get("text", {}).get("text", "").lower()
+        for block in outcome.blocks
+        if block.to_dict()["type"] == "section"
+    )
+    assert "couldn't search the workspace" in section_texts
     assert "unavailable" in outcome.llm_context.lower()
 
 
@@ -191,7 +196,7 @@ def test_need_merges_index_and_rts_hits(mocker: MockerFixture) -> None:
 
     assert isinstance(outcome, NeedRecall)
     section_texts = " ".join(
-        block.to_dict()["text"]["text"]
+        block.to_dict().get("text", {}).get("text", "")
         for block in outcome.blocks
         if block.to_dict()["type"] == "section"
     )
@@ -219,7 +224,7 @@ def test_need_surfaces_index_hits_when_rts_degraded(mocker: MockerFixture) -> No
     block_types = [b.to_dict()["type"] for b in outcome.blocks]
     assert "header" in block_types  # ranked results, not the degraded block
     section_texts = " ".join(
-        block.to_dict()["text"]["text"]
+        block.to_dict().get("text", {}).get("text", "")
         for block in outcome.blocks
         if block.to_dict()["type"] == "section"
     )

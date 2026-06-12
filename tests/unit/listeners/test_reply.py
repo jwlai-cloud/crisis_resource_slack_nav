@@ -65,10 +65,11 @@ def _match() -> RecallMatch:
 
 def _need_recall(result=None) -> NeedRecall:
     result = [_match()] if result is None else result
+    need = _need()
     return NeedRecall(
-        need=_need(),
+        need=need,
         result=result,
-        blocks=build_recall_blocks(result),
+        blocks=build_recall_blocks(result, need=need),
         llm_context="1 prior offer(s) found... contact=<@U1>",
     )
 
@@ -204,5 +205,29 @@ def test_degraded_recall_still_one_reply(mocker: MockerFixture) -> None:
     )
 
     assert stream.stop_calls == 1
-    text = stream.stop_blocks[0].to_dict()["text"]["text"].lower()
-    assert "couldn't search the workspace" in text
+    # The parse summary leads; the degraded block follows it.
+    texts = [b.to_dict().get("text", {}).get("text", "").lower() for b in stream.stop_blocks]
+    assert any("couldn't search the workspace" in t for t in texts)
+
+
+def test_need_reply_opens_with_code_composed_parse_summary(mocker: MockerFixture) -> None:
+    """The single reply opens its structured region with the parse-summary fields section."""
+    _patch_run_agent(mocker)
+    stream = _FakeStream()
+
+    reply.compose_reply(
+        "need a generator in Exmouth",
+        _deps(),
+        say_stream=_stream_factory(stream),
+        recall=_need_recall(),
+        mention_requester=False,
+    )
+
+    first = stream.stop_blocks[0].to_dict()
+    assert first["type"] == "section"
+    assert "fields" in first
+    joined = "\n".join(f["text"] for f in first["fields"])
+    assert "need_type" in joined and "generator" in joined
+    assert "location" in joined and "Exmouth" in joined
+    assert "urgency" in joined and "high" in joined
+    assert "household" in joined and "4" in joined

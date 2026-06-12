@@ -13,6 +13,18 @@ Every path here honours the product guardrails (CLAUDE.md, design doc safety):
   explicit "no prior offers found" block. Neither path is silent and neither
   fabricates a result.
 
+Visual parity with the landing-page mock (task 008): the reply opens with a
+code-composed parse-summary ``section`` (``fields``: need_type / location /
+urgency / household, drawn straight from the parsed :class:`~entities.Need`,
+never the LLM, with unknown fields omitted), and each match card opens with a
+rank-label context line — ``🟩 MATCH n · WORKSPACE · REAL-TIME SEARCH``. The
+mock's colored *left bar* is rendered with a leading colored-square emoji rather
+than a message ``attachment``: the single streamed reply finalises through
+``ChatStream.stop(blocks=...)`` (task 005), which exposes no ``attachments``
+parameter, and the 010 action handlers rewrite cards by ``block_id`` within the
+message's *top-level* blocks — burying the action row inside an attachment would
+break that state machine. The emoji is the equivalent, top-level-safe cue.
+
 The composition is pure and deterministic (timestamp formatting is UTC), so the
 block structure can be snapshot/asserted in unit tests without a live Slack call.
 """
@@ -31,10 +43,24 @@ from slack_sdk.models.blocks import (
     SectionBlock,
 )
 
+from entities import Need
 from recall.models import RecallError, RecallMatch
 from recall.payload import ConnectPayload
 
 VERIFY_NOTE = "Verify before relying on this."
+
+# The mock renders a colored *left bar* per card (green = workspace). Block Kit's
+# streamed-reply surface (``ChatStream.stop``) has no ``attachments`` hook and the
+# action-button state machine needs the rows to stay top-level blocks, so we use a
+# leading colored-square emoji as the equivalent cue. Green matches the workspace
+# card; future MCP-card work owns the blue/red variants.
+WORKSPACE_BAR_EMOJI = "🟩"
+
+# The per-card rank label, mirroring the mock's `MATCH n · WORKSPACE · REAL-TIME
+# SEARCH` context line. Every match rendered here is a workspace/RTS or index hit,
+# so the source label is uniform; official MCP cards (future work) compose their
+# own `· OFFICIAL · MCP FEED` label elsewhere and are not styled by this module.
+_RANK_LABEL = "{emoji} *MATCH {n}* · WORKSPACE · REAL-TIME SEARCH"
 
 # Action ids for the bounded-autonomy confirmation buttons (task 010). The match
 # card offers Connect / Not relevant; a connected card swaps in Mark resolved. The
@@ -53,8 +79,11 @@ _NOT_RELEVANT_LABEL = "Not relevant"
 
 _HEADER = "Prior offers from this workspace"
 
-# Slack caps messages at 50 blocks; each match renders section+context+actions
-# (3 blocks) plus a divider, so 5 matches stays well under the cap.
+# Slack caps messages at 50 blocks. Each match now renders rank-context + section
+# + sourcing-context + actions (4 blocks) plus a divider between cards, and the
+# reply also carries a leading parse-summary section, a header, and an optional
+# "showing top N" line. Worst case: 1 + 1 + (5 * 4) + 4 + 1 = 27 blocks, plus the
+# feedback row appended by the caller — comfortably under the 50-block cap.
 _MAX_RENDERED_MATCHES = 5
 _NO_MATCHES = (
     "I found *no prior offers* in this workspace for that need yet. "
@@ -71,6 +100,34 @@ _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
 def _format_ts(ts: datetime) -> str:
     """Render an aware-UTC timestamp for on-screen display (deterministic)."""
     return ts.strftime(_TIMESTAMP_FORMAT)
+
+
+def _parse_summary_block(need: Need) -> SectionBlock | None:
+    """Compose the structured parse summary as a ``fields`` section, or ``None``.
+
+    The reply's structured region opens with what the agent understood — drawn
+    verbatim from the parsed :class:`~entities.Need` (``need_type`` / ``location``
+    / ``urgency`` / ``household``), composed by code, never by the LLM. Each label
+    is a bold mrkdwn line; empty/unknown values are *omitted* entirely rather than
+    shown as a placeholder (the no-placeholder rule). Returns ``None`` if every
+    field is unknown so we never emit an empty section. Slack caps a section at 10
+    ``fields``; four here stays well under.
+    """
+    fields: list[MarkdownTextObject] = []
+    need_type = (need.need_type or "").strip()
+    if need_type:
+        fields.append(MarkdownTextObject(text=f"*need_type*\n{need_type}"))
+    location = (need.location or "").strip()
+    if location and location.lower() != "unknown":
+        fields.append(MarkdownTextObject(text=f"*location*\n{location}"))
+    # Urgency is a required StrEnum, so it is always known and rendered.
+    fields.append(MarkdownTextObject(text=f"*urgency*\n{need.urgency.value}"))
+    # household_size is a required int; render when it is a real count (> 0).
+    if need.household_size > 0:
+        fields.append(MarkdownTextObject(text=f"*household*\n{need.household_size}"))
+    if not fields:
+        return None
+    return SectionBlock(fields=fields)
 
 
 def _source_line(match: RecallMatch) -> str:
@@ -139,13 +196,26 @@ def _match_action_block(match: RecallMatch, index: int) -> ActionsBlock:
     )
 
 
-def _match_blocks(match: RecallMatch, index: int) -> list[Block]:
-    """The blocks for one match: snippet, source/timestamp/contact/verify line, actions.
+def _rank_label_block(index: int) -> ContextBlock:
+    """The card's rank-label header line: ``🟩 MATCH n · WORKSPACE · REAL-TIME SEARCH``.
 
-    The trailing :class:`ActionsBlock` is the only place a recall match becomes
-    *actionable*. Every match rendered here is a workspace/RTS or index hit (a
-    person's offer), so every one gets the confirmation buttons; official MCP
-    results are composed elsewhere and stay informational (no actions).
+    Mirrors the mock's per-card rank line; the leading colored square stands in for
+    the mock's green left bar (workspace source). ``index`` is zero-based; the label
+    is one-based for humans.
+    """
+    text = _RANK_LABEL.format(emoji=WORKSPACE_BAR_EMOJI, n=index + 1)
+    return ContextBlock(elements=[MarkdownTextObject(text=text)])
+
+
+def _match_blocks(match: RecallMatch, index: int) -> list[Block]:
+    """The blocks for one match: rank label, snippet, source/contact/verify line, actions.
+
+    Each card opens with its rank-label context line (the colored-square cue +
+    `MATCH n · WORKSPACE · REAL-TIME SEARCH`), then the snippet, then the sourcing
+    context line. The trailing :class:`ActionsBlock` is the only place a recall
+    match becomes *actionable*. Every match rendered here is a workspace/RTS or
+    index hit (a person's offer), so every one gets the confirmation buttons;
+    official MCP results are composed elsewhere and stay informational (no actions).
     """
     elements: list[MarkdownTextObject] = [MarkdownTextObject(text=_source_line(match))]
     contact = _contact_line(match)
@@ -153,31 +223,47 @@ def _match_blocks(match: RecallMatch, index: int) -> list[Block]:
         elements.append(MarkdownTextObject(text=contact))
     elements.append(MarkdownTextObject(text=VERIFY_NOTE))
     return [
+        _rank_label_block(index),
         SectionBlock(text=MarkdownTextObject(text=match.text or "_(no text)_")),
         ContextBlock(elements=elements),
         _match_action_block(match, index),
     ]
 
 
-def build_recall_blocks(result: list[RecallMatch] | RecallError) -> list[Block]:
+def build_recall_blocks(
+    result: list[RecallMatch] | RecallError,
+    *,
+    need: Need | None = None,
+) -> list[Block]:
     """Compose the Block Kit reply for a recall result.
 
     ``result`` is whatever ``recall.client.recall_offers`` returned — already
-    ranked when it is a list. Branches:
+    ranked when it is a list. When ``need`` is supplied (every recognised Need),
+    the structured region *opens* with the code-composed parse-summary fields
+    section, ahead of every branch below. Branches:
 
     * :class:`RecallError` -> a single "search unavailable" block (degraded).
     * empty list -> a single "no prior offers found" block.
     * non-empty list -> a header, then one match group per item, divider-separated.
+      Each match card opens with its rank-label context line.
 
     Every match group carries source, timestamp, and the verify note.
     """
+    blocks: list[Block] = []
+    if need is not None:
+        summary = _parse_summary_block(need)
+        if summary is not None:
+            blocks.append(summary)
+
     if isinstance(result, RecallError):
-        return [SectionBlock(text=MarkdownTextObject(text=_SEARCH_UNAVAILABLE))]
+        blocks.append(SectionBlock(text=MarkdownTextObject(text=_SEARCH_UNAVAILABLE)))
+        return blocks
 
     if not result:
-        return [SectionBlock(text=MarkdownTextObject(text=_NO_MATCHES))]
+        blocks.append(SectionBlock(text=MarkdownTextObject(text=_NO_MATCHES)))
+        return blocks
 
-    blocks: list[Block] = [HeaderBlock(text=PlainTextObject(text=_HEADER))]
+    blocks.append(HeaderBlock(text=PlainTextObject(text=_HEADER)))
     shown = result[:_MAX_RENDERED_MATCHES]
     for index, match in enumerate(shown):
         if index > 0:

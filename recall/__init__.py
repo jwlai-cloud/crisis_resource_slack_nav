@@ -17,6 +17,7 @@ from recall.blocks import (
     ACTION_NOT_RELEVANT,
     ACTION_RESOLVE,
     VERIFY_NOTE,
+    WORKSPACE_BAR_EMOJI,
     build_recall_blocks,
 )
 from recall.client import build_query, recall_offers
@@ -29,6 +30,7 @@ __all__ = [
     "ACTION_NOT_RELEVANT",
     "ACTION_RESOLVE",
     "VERIFY_NOTE",
+    "WORKSPACE_BAR_EMOJI",
     "ConnectPayload",
     "RecallError",
     "RecallMatch",

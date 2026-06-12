@@ -173,6 +173,6 @@ def route_message(
     return NeedRecall(
         need=need,
         result=result,
-        blocks=build_recall_blocks(result),
+        blocks=build_recall_blocks(result, need=need),
         llm_context=serialize_recall_context(result),
     )
