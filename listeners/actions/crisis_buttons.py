@@ -39,7 +39,7 @@ _AUDIT_NOT_RELEVANT = "not_relevant"
 
 _RESOLVE_LABEL = ":white_check_mark: Connected — Mark resolved"
 _RESOLVED_NOTE = ":white_check_mark: Resolved — this offer is now closed and won't match again."
-_DISMISSED_NOTE = ":heavy_multiplication_x: Dismissed — I won't surface this match again."
+_DISMISSED_NOTE = ":heavy_multiplication_x: Dismissed for this request."
 
 _PARSE_FAIL = (
     ":warning: I couldn't read this match's details, so I didn't do anything. "
