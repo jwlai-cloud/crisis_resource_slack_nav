@@ -17,6 +17,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from entities import Need, Urgency, deterministic_id
+from matching.conversion import INDEX_SOURCE_CHANNEL
 from recall.blocks import (
     ACTION_CONNECT,
     ACTION_NOT_RELEVANT,
@@ -161,6 +162,34 @@ def test_match_carries_tappable_contact_mention(
     context_text = _sourcing_text([match])
 
     assert "Contact: <@U_OFFERER>" in context_text
+
+
+def test_real_channel_is_hash_prefixed(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """A real Slack channel still renders with a leading `#` (e.g. `in #general`)."""
+    match = make_match(channel="general")
+
+    context_text = _sourcing_text([match])
+
+    assert "in #general" in context_text
+
+
+def test_index_provenance_label_is_not_hash_prefixed(
+    make_match: Callable[..., RecallMatch],
+) -> None:
+    """The index provenance label renders WITHOUT a `#` (016 amendment, cosmetic).
+
+    An index-only hit carries the "workspace memory" provenance label, not a Slack
+    channel. Prefixing it with `#` ("in #workspace memory") would dress a
+    non-channel up as one; it must read "in workspace memory".
+    """
+    match = make_match(channel=INDEX_SOURCE_CHANNEL)
+
+    context_text = _sourcing_text([match])
+
+    assert f"in {INDEX_SOURCE_CHANNEL}" in context_text
+    assert f"#{INDEX_SOURCE_CHANNEL}" not in context_text
 
 
 def test_every_match_has_contact_mention(

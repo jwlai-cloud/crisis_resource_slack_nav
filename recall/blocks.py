@@ -131,9 +131,25 @@ def _parse_summary_block(need: Need) -> SectionBlock | None:
 
 
 def _source_line(match: RecallMatch) -> str:
-    """The sourcing context line: who / where / when, with a permalink if present."""
+    """The sourcing context line: who / where / when, with a permalink if present.
+
+    A real Slack channel gets a ``#`` prefix; the index provenance label
+    (:data:`~matching.conversion.INDEX_SOURCE_CHANNEL`, "workspace memory") does
+    NOT — it names where the recall came from (in-memory recall, not a channel), so
+    "in workspace memory" reads correctly while "in #workspace memory" would dress
+    a non-channel up as one (task 016 amendment, cosmetic). The label is imported
+    inside the function to avoid a ``matching`` ↔ ``recall`` import cycle at module
+    load (both packages cross-import Block-Kit helpers at top level).
+    """
+    from matching.conversion import INDEX_SOURCE_CHANNEL
+
     author = match.author or "Unknown author"
-    channel = f"#{match.channel}" if match.channel else "an unknown channel"
+    if not match.channel:
+        channel = "an unknown channel"
+    elif match.channel == INDEX_SOURCE_CHANNEL:
+        channel = match.channel
+    else:
+        channel = f"#{match.channel}"
     when = _format_ts(match.ts)
     line = f"Posted by *{author}* in {channel} · {when}"
     if match.permalink:

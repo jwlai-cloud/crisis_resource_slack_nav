@@ -22,7 +22,7 @@ argument.
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from slack_bolt import Say
 from slack_sdk import WebClient
@@ -31,7 +31,14 @@ from slack_sdk.models.blocks import Block
 from agent.parsing import parse_message
 from entities import Need, Offer
 from matching import build_offer_ack_blocks, match_from_offer, offer_index
-from recall import RecallError, RecallMatch, build_recall_blocks, rank_matches, recall_offers
+from recall import (
+    RecallError,
+    RecallMatch,
+    build_recall_blocks,
+    rank_matches,
+    recall_offers,
+    tokenize,
+)
 from recall.dismissals import dismissal_store
 
 logger = logging.getLogger(__name__)
@@ -47,6 +54,34 @@ _CONTEXT_MAX_MATCHES = 5
 # context — enough to reason and rank over, without paying for a wall of text the
 # model only summarises. Truncated snippets get a trailing ellipsis.
 _CONTEXT_SNIPPET_MAX = 200
+
+# Jaccard similarity at/above which an index hit and an RTS hit FROM THE SAME
+# AUTHOR are treated as cross-source twins (task 016 amendment, the SECONDARY
+# rule). This is the *fallback* test, behind the timestamp-identity rule below:
+# it catches a re-posted *copy* of the offer (a second message with similar text
+# but a fresh ts, where the deterministic timestamp gate can't fire). High on
+# purpose, and the same value the echo filter uses (``recall.client``) — it
+# targets "same offer rendered twice" without collapsing two genuinely different
+# offers that merely share resource words. Reuses ``tokenize`` so "overlap" means
+# the same thing here as in ranking, the index, and the echo filter.
+_TWIN_JACCARD_THRESHOLD = 0.85
+
+# Sub-second tolerance for the timestamp-identity twin rule (task 016 amendment,
+# the PRIMARY rule). An index hit and its RTS twin originate from the SAME Slack
+# message, so the offer's ``source_ts`` (set in ``route_message`` via
+# ``_event_ts_to_utc`` → ``parse_message`` → ``Offer.source_ts``) and the RTS
+# match's ``ts`` (set in ``recall.models.match_from_message``) are both
+# ``datetime.fromtimestamp(float(<same message ts>), tz=UTC)``.
+#
+# Verified empirically (see the task log amendment): at Slack-timestamp magnitude
+# (~1.74e9 s) the float64 ULP is ~0.24 µs, and ``fromtimestamp`` rounds to the
+# nearest microsecond — so EVERY string spelling of one ``SSSS.NNNNNN`` value
+# (canonical, trailing-zeros trimmed, extra trailing zeros) parses to the IDENTICAL
+# microsecond. The worst-case delta across all reformattings is 0 µs, so exact
+# equality already holds. We still allow a 1 ms window because RTS is an external
+# boundary whose exact ts serialisation we don't own — this is defence in depth
+# against a future reformatting, NOT a correctness crutch (the measured need is 0).
+_TWIN_TS_TOLERANCE = timedelta(milliseconds=1)
 
 
 @dataclass(frozen=True)
@@ -98,6 +133,12 @@ def _merge_recall_results(
     relevant" are filtered out (task 015): a dismissal is a per-user "not this one"
     signal, so a fresh need never resurfaces a match the same requester already
     waved off. The filter is per-user — another requester still sees it.
+
+    When RTS succeeds, the concatenated list is also de-twinned (task 016): a
+    freshly indexed offer can surface both from the local index (carrying the
+    offer_id the buttons need) and from RTS (the original channel message), and
+    rendering it twice is confusing. ``_collapse_cross_source_twins`` folds each
+    such pair into one match before the dismissal filter and ranking run.
     """
     index_matches = [match_from_offer(offer) for offer in offer_index.keyword_lookup(need)]
 
@@ -107,8 +148,97 @@ def _merge_recall_results(
             return rank_matches(need, kept, datetime.now(UTC))
         return rts_result
 
-    combined = dismissal_store.filter_dismissed(requester_id, index_matches + rts_result)
+    deduped = _collapse_cross_source_twins(index_matches, rts_result)
+    combined = dismissal_store.filter_dismissed(requester_id, deduped)
     return rank_matches(need, combined, datetime.now(UTC))
+
+
+def _is_cross_source_twin(index_match: RecallMatch, rts_match: RecallMatch) -> bool:
+    """True if these two matches are the same underlying offer from two sources.
+
+    Same author is a hard gate either way: two near-identical posts from two
+    *different* people are two genuine offers, never a twin. Past the gate, the
+    task 016 amendment orders two tests deterministic-first (the PM spec change
+    replacing the original Jaccard-only rule):
+
+    1. **Timestamp identity (PRIMARY, deterministic).** An index hit and its RTS
+       twin come from the SAME Slack message, so the offer's ``source_ts`` and the
+       RTS match's ``ts`` are the same instant parsed through the same
+       ``fromtimestamp(float(...), tz=UTC)`` path. Identical (aware-UTC)
+       timestamps from the same author ⟹ twin — regardless of how the index
+       recomposes the offer's wording. This collapses the "live cooker" case where
+       the structured index text and the loose original message diverge too far for
+       Jaccard. The comparison allows :data:`_TWIN_TS_TOLERANCE`; the measured need
+       is 0 (see the constant's note) — it is defence in depth at the RTS boundary.
+    2. **Jaccard similarity (SECONDARY, fallback).** When the timestamps differ
+       (e.g. a re-posted *copy* of the offer carries a fresh message ts), text
+       overlap at/above :data:`_TWIN_JACCARD_THRESHOLD` still collapses the pair.
+       Reuses the shared ``tokenize`` (the same overlap notion as ranking, the
+       index, and the echo filter).
+    """
+    if not index_match.author_id or index_match.author_id != rts_match.author_id:
+        return False
+    if abs(index_match.ts - rts_match.ts) <= _TWIN_TS_TOLERANCE:
+        return True
+    index_tokens = tokenize(index_match.text)
+    rts_tokens = tokenize(rts_match.text)
+    union = index_tokens | rts_tokens
+    if not union:
+        return False
+    jaccard = len(index_tokens & rts_tokens) / len(union)
+    return jaccard >= _TWIN_JACCARD_THRESHOLD
+
+
+def _merge_twin(index_match: RecallMatch, rts_match: RecallMatch) -> RecallMatch:
+    """Fold a twin pair into ONE match: keep the index hit, adopt RTS display fields.
+
+    The index hit is kept because it carries the ``offer_id`` the action buttons
+    need for status transitions. The RTS twin contributes the display fields the
+    index copy lacks — its ``permalink`` (an index hit links to no single message)
+    and its real ``channel`` (the index copy carries the "workspace memory"
+    provenance label, not a Slack channel). Fields the index copy already has are
+    left untouched — we only fill the gaps. ``RecallMatch`` is a Pydantic model, so
+    we build the merged value with ``model_copy`` rather than mutating in place.
+    """
+    update: dict[str, str] = {}
+    if not index_match.permalink and rts_match.permalink:
+        update["permalink"] = rts_match.permalink
+        update["channel"] = rts_match.channel
+        update["channel_id"] = rts_match.channel_id
+    if not update:
+        return index_match
+    return index_match.model_copy(update=update)
+
+
+def _collapse_cross_source_twins(
+    index_matches: list[RecallMatch], rts_matches: list[RecallMatch]
+) -> list[RecallMatch]:
+    """Concatenate both sources, collapsing each index/RTS twin pair to one match.
+
+    Order is preserved (index hits first, then the RTS hits that were not twinned),
+    so the downstream ranking — not this step — owns the final ordering. Each RTS
+    hit collapses against at most one index hit (the first match), and each index
+    hit absorbs at most one RTS twin, so two distinct RTS hits never both fold into
+    the same index hit.
+    """
+    merged: list[RecallMatch] = []
+    consumed_rts: set[int] = set()
+    for index_match in index_matches:
+        twin_pos = next(
+            (
+                pos
+                for pos, rts_match in enumerate(rts_matches)
+                if pos not in consumed_rts and _is_cross_source_twin(index_match, rts_match)
+            ),
+            None,
+        )
+        if twin_pos is None:
+            merged.append(index_match)
+        else:
+            consumed_rts.add(twin_pos)
+            merged.append(_merge_twin(index_match, rts_matches[twin_pos]))
+    merged.extend(rts_match for pos, rts_match in enumerate(rts_matches) if pos not in consumed_rts)
+    return merged
 
 
 def serialize_recall_context(result: list[RecallMatch] | RecallError) -> str:
