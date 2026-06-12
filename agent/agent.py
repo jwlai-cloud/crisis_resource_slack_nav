@@ -164,7 +164,10 @@ def get_model() -> "str | Model":
     elif os.environ.get("OPENAI_API_KEY"):
         _cached_model = "openai:gpt-4.1-mini"
     elif os.environ.get("GOOGLE_VERTEX_API_KEY"):
-        _cached_model = _vertex_model()
+        # Never cache this one: the model instance owns an async client whose
+        # locks bind to the event loop of first use, and Bolt listeners run
+        # every message in a fresh loop ("bound to a different event loop").
+        return _vertex_model()
     elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         # Override with e.g. GEMINI_MODEL=gemini-2.5-flash-lite when the free-tier
         # daily quota for the default model is exhausted (separate per-model pools).
