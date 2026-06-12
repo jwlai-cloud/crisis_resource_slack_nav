@@ -103,6 +103,8 @@ def _drop_agent_noise(matches: list[RecallMatch], bot_user_id: str | None) -> li
     filtered: list[RecallMatch] = []
     seen: dict[tuple[str, str], int] = {}
     for match in matches:
+        if bot_user_id and match.author_id == bot_user_id:
+            continue  # the agent's own replies are never offers
         if bot_user_id and f"<@{bot_user_id}" in match.text:
             continue
         key = (match.author_id or match.author, " ".join(match.text.split()).lower())

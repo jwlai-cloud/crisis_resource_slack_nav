@@ -121,3 +121,15 @@ def test_rank_is_stable_for_equal_scores(
     ranked = rank_matches(need, [b, a], now)
 
     assert [m.text for m in ranked] == ["water aaa", "water bbb"]
+
+
+def test_location_only_overlap_is_not_a_match(
+    make_need: Callable[..., Need],
+    make_match: Callable[..., RecallMatch],
+    now: datetime,
+) -> None:
+    """Shared location words alone must not qualify a match (live regression)."""
+    need = make_need(need_type="baby formula", location="Exmouth town")
+    generator_offer = make_match(text="Offering: spare generator in Exmouth town", ts=now)
+
+    assert rank_matches(need, [generator_offer], now) == []

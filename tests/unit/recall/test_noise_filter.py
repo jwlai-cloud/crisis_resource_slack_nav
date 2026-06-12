@@ -31,3 +31,9 @@ def test_duplicates_collapse_to_newest():
 def test_no_bot_id_keeps_all_unique():
     ms = [_m("<@UBOT> need x"), _m("Offering: water")]
     assert len(_drop_agent_noise(ms, None)) == 2
+
+
+def test_bot_authored_messages_dropped():
+    ms = [_m("We understand you need formula", author_id="UBOT"), _m("Offering: water")]
+    out = _drop_agent_noise(ms, "UBOT")
+    assert [m.text for m in out] == ["Offering: water"]

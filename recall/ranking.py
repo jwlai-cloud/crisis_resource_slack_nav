@@ -60,6 +60,24 @@ def need_keywords(need: Need) -> set[str]:
     return tokenize(f"{need.need_type} {need.location}")
 
 
+def resource_keywords(need: Need) -> set[str]:
+    """The resource-type tokens only — the part of a Need a match MUST share.
+
+    Location words alone must never qualify a match: a generator offer "in
+    Exmouth town" is not a match for "baby formula in Exmouth town" (seen live).
+    """
+    return tokenize(need.need_type)
+
+
+def resource_overlap(need: Need, match: RecallMatch) -> float:
+    """Fraction of the Need's resource tokens present in the match text."""
+    keywords = resource_keywords(need)
+    if not keywords:
+        return 0.0
+    hits = keywords & _tokens(match.text)
+    return len(hits) / len(keywords)
+
+
 def keyword_overlap(need: Need, match: RecallMatch) -> float:
     """Fraction of the Need's keywords present in the match text, in ``[0, 1]``."""
     keywords = need_keywords(need)
@@ -93,14 +111,15 @@ def score_match(need: Need, match: RecallMatch, now: datetime) -> float:
 def rank_matches(need: Need, matches: list[RecallMatch], now: datetime) -> list[RecallMatch]:
     """Return ``matches`` ordered best-fit first for ``need``.
 
-    Matches with zero keyword overlap are dropped entirely: recency alone must
-    never surface an irrelevant post (live testing floated Wordle scores into a
-    water-and-generator request on recency score alone).
+    Matches with zero RESOURCE-token overlap are dropped entirely: neither
+    recency nor location words may surface an irrelevant post (live testing
+    floated Wordle scores on recency, then a generator offer into a
+    baby-formula request on shared location words alone).
 
     Sort key: combined score desc, then recency desc, then text — so equal-scoring
     matches order deterministically and snapshot tests stay stable.
     """
-    relevant = [m for m in matches if keyword_overlap(need, m) > 0.0]
+    relevant = [m for m in matches if resource_overlap(need, m) > 0.0]
     return sorted(
         relevant,
         key=lambda m: (-score_match(need, m, now), -m.ts.timestamp(), m.text),
