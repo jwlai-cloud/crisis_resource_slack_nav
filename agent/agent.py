@@ -1,8 +1,10 @@
 import logging
 import os
+import sys
+from pathlib import Path
 
 from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPServerStreamableHTTP
+from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
 from pydantic_ai.models import Model
 
 from agent.deps import AgentDeps
@@ -126,6 +128,31 @@ Available capabilities:
 Use search and read to find prior offers, coordinator notices, and resolved cases
 relevant to a need. When you surface anything you found this way, carry its source
 (who posted, which channel) and timestamp into your reply.
+
+## OFFICIAL DIRECTORIES (external MCP tools)
+You have tools that reach external official directories for the **plan** step's
+live public information — these are the MCP feeds the design doc names:
+- `get_road_closures` — current road closures (Main Roads WA-style).
+- `get_evac_centres` — evacuation centres with capacity and status (DFES-style).
+- `get_official_advice` — official advice and warning notices (Emergency WA-style).
+
+Rules for using them — these enforce the safety guardrails, do not relax them:
+- Consult the relevant directory whenever a need touches travel, shelter,
+  evacuation, water, power, or an official warning. State in your plan which
+  directories you are checking.
+- Every result a tool returns carries a feed name and a `fetched_at` timestamp.
+  Surface BOTH for every item you show — render it as `feed / fetched-at` — and
+  always add the note: verify before relying on this. Point people to the
+  official source and its timestamp so they can confirm for themselves.
+- These are official sources you relay, not your own judgement. Never restate a
+  closure or advisory as a safety assertion of your own — never say a road is
+  safe or that it is okay to travel. Present the official status with its source
+  and timestamp and the verify-before-relying note.
+- A tool may return a structured error instead of data (a feed is unavailable or
+  simulated down). When it does, say so plainly and name the feed that could not
+  be reached (e.g. "the road-closures feed is unavailable right now"), then
+  continue with what you do have. Never silently skip a feed and never invent or
+  guess closures, centres, or advice to fill the gap.
 """
 
 logger = logging.getLogger(__name__)
@@ -182,6 +209,27 @@ def get_model() -> "str | Model":
 
 SLACK_MCP_URL = "https://mcp.slack.com/mcp"
 
+# Repo root — the cwd the mock-MCP subprocess runs from so `-m mocks.server`
+# resolves regardless of where the Slack CLI launches the app.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _mock_mcp_server() -> MCPServerStdio:
+    """The mock official-directories MCP server, attached as a stdio subprocess.
+
+    pydantic-ai launches and tears down ``python -m mocks.server`` around each
+    run, so there is no second process or port to manage under `slack run`
+    (transport choice documented in the task log / mocks/server.py). The same
+    interpreter that runs the app runs the subprocess, so it always uses the
+    project's locked deps.
+    """
+    return MCPServerStdio(
+        command=sys.executable,
+        args=["-m", "mocks.server"],
+        cwd=str(_REPO_ROOT),
+    )
+
+
 agent = Agent(
     deps_type=AgentDeps,
     system_prompt=SYSTEM_PROMPT,
@@ -218,6 +266,15 @@ def run_agent(text, deps, message_history=None, recall_context=None):
         )
     else:
         logger.info("Slack MCP Server disabled (no user_token)")
+
+    # Mock official-directories MCP server: enabled by default, kill-switch via
+    # MOCK_MCP_DISABLED=1 (e.g. to isolate the agent from the external-reach
+    # pillar during debugging). Thin mocks, never live government feeds (§9).
+    if os.environ.get("MOCK_MCP_DISABLED") == "1":
+        logger.info("Mock official-directories MCP server disabled (MOCK_MCP_DISABLED=1)")
+    else:
+        logger.info("Mock official-directories MCP server enabled")
+        toolsets.append(_mock_mcp_server())
 
     return agent.run_sync(
         prompt,

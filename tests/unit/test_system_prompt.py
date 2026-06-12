@@ -89,3 +89,36 @@ def test_prompt_retains_emoji_reaction_and_mcp_sections() -> None:
     """Emoji-reaction tool instruction and the Slack MCP capability section persist."""
     assert "add_emoji_reaction" in SYSTEM_PROMPT
     assert "SLACK MCP SERVER" in SYSTEM_PROMPT
+
+
+# Each entry: (label, distinctive phrase the OFFICIAL DIRECTORIES section must keep).
+OFFICIAL_DIRECTORY_ANCHORS = [
+    # The section exists and names itself.
+    ("section header", "OFFICIAL DIRECTORIES"),
+    # The model is told about each of the three official-directory tools by name.
+    ("road tool", "get_road_closures"),
+    ("evac tool", "get_evac_centres"),
+    ("advice tool", "get_official_advice"),
+    # Every surfaced result carries feed + fetched-at + verify note (guardrail 3).
+    ("feed + fetched-at", "carries a feed name and a `fetched_at` timestamp"),
+    ("verify note", "verify before relying on this"),
+    # A feed error is stated by name, never silently skipped (guardrail 4).
+    ("degraded by name", "name the feed that could not"),
+    ("no invented feeds", "never invent or\n  guess closures, centres, or advice"),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "phrase"),
+    OFFICIAL_DIRECTORY_ANCHORS,
+    ids=[f"{label}: {phrase[:30]}" for label, phrase in OFFICIAL_DIRECTORY_ANCHORS],
+)
+def test_official_directories_section_anchored(label: str, phrase: str) -> None:
+    """The OFFICIAL DIRECTORIES section keeps its tool names + sourcing anchors."""
+    assert phrase in SYSTEM_PROMPT, f"Official-directories anchor '{label}' missing: {phrase!r}"
+
+
+def test_official_directories_names_all_three_tools() -> None:
+    """The prompt advertises all three mock MCP tools so the model knows they exist."""
+    for tool in ("get_road_closures", "get_evac_centres", "get_official_advice"):
+        assert tool in SYSTEM_PROMPT, f"Official-directory tool not advertised: {tool}"

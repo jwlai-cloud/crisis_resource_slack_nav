@@ -1,0 +1,26 @@
+[
+  {
+    "road": "Minilya-Exmouth Road",
+    "segment": "Yannarie River crossing",
+    "status": "CLOSED",
+    "reason": "Floodwater over road; Yannarie River crossing impassable after Severe Tropical Cyclone Narelle.",
+    "detour": "No detour available — this is the only sealed road into Exmouth. Remain in place.",
+    "updated_at": "2026-03-14T22:10:00+00:00"
+  },
+  {
+    "road": "Learmonth Access Road",
+    "segment": "Learmonth Airport turnoff",
+    "status": "UNDER ASSESSMENT",
+    "reason": "Debris and surface damage being assessed by Main Roads WA crews; not yet cleared for use.",
+    "detour": "None confirmed. Awaiting assessment outcome before reopening.",
+    "updated_at": "2026-03-15T03:40:00+00:00"
+  },
+  {
+    "road": "Murat Road",
+    "segment": "Exmouth town centre to Bundegi",
+    "status": "OPEN WITH CAUTION",
+    "reason": "Local debris cleared; isolated branches and standing water reported. Reduced speed advised.",
+    "detour": "None required.",
+    "updated_at": "2026-03-15T06:05:00+00:00"
+  }
+]

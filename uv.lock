@@ -489,6 +489,7 @@ name = "crisis-resource-navigator"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "fastmcp" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
@@ -509,6 +510,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastmcp", specifier = ">=3.4,<4" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pydantic-ai", extras = ["anthropic", "openai"] },
     { name = "pydantic-settings", specifier = ">=2.4" },
