@@ -135,6 +135,7 @@ def route_message(
     client: WebClient,
     user_token: str | None,
     team_id: str | None = None,
+    bot_user_id: str | None = None,
     say: Say,
 ) -> NeedRecall | None:
     """Route a parsed message: index+ack an Offer, or recall context for a Need.
@@ -165,7 +166,7 @@ def route_message(
         return None
 
     need: Need = parsed
-    rts_result = asyncio.run(recall_offers(need, client, user_token, team_id))
+    rts_result = asyncio.run(recall_offers(need, client, user_token, team_id, bot_user_id))
     result = _merge_recall_results(need, rts_result)
 
     logger.info("Recalled context for need: %s in %s", need.need_type, need.location)

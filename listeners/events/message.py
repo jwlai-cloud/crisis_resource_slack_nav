@@ -75,6 +75,7 @@ def handle_message(
                 client=client,
                 user_token=resolve_user_token(context.user_token),
                 team_id=context.team_id,
+                bot_user_id=context.bot_user_id,
                 say=say,
             )
         except Exception as recall_error:

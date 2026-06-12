@@ -50,6 +50,7 @@ async def recall_offers(
     client: WebClient,
     user_token: str | None,
     team_id: str | None = None,
+    bot_user_id: str | None = None,
 ) -> list[RecallMatch] | RecallError:
     """Search the workspace for prior offers/notices relevant to ``need``.
 
@@ -84,7 +85,32 @@ async def recall_offers(
 
     messages = response.get("results", {}).get("messages", []) or []
     try:
-        return [match_from_message(message) for message in messages]
+        matches = [match_from_message(message) for message in messages]
     except (KeyError, TypeError, ValueError) as exc:
         logger.warning("RTS recall returned an unparseable message: %s", exc)
         return RecallError(reason="malformed_response", detail=str(exc))
+    return _drop_agent_noise(matches, bot_user_id)
+
+
+def _drop_agent_noise(matches: list[RecallMatch], bot_user_id: str | None) -> list[RecallMatch]:
+    """Remove agent-directed traffic and duplicate retries from RTS results.
+
+    Messages that mention the bot are requests *to* the agent (needs, retries),
+    not offers or notices — surfacing them as "prior offers" echoes the
+    requester's own messages back at them. Near-identical retries of the same
+    message by the same author collapse to the newest occurrence.
+    """
+    filtered: list[RecallMatch] = []
+    seen: dict[tuple[str, str], int] = {}
+    for match in matches:
+        if bot_user_id and f"<@{bot_user_id}" in match.text:
+            continue
+        key = (match.author_id or match.author, " ".join(match.text.split()).lower())
+        if key in seen:
+            kept = filtered[seen[key]]
+            if match.ts > kept.ts:
+                filtered[seen[key]] = match
+            continue
+        seen[key] = len(filtered)
+        filtered.append(match)
+    return filtered
