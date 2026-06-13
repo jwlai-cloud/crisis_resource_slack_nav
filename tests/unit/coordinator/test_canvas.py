@@ -1,14 +1,15 @@
 """Unit tests for coordinator.canvas — the channel-canvas find-or-create publisher.
 
-The board is the **channel canvas** of ``CRISIS_CHANNEL`` (task 025, ADR-0005): a
-permanent top-bar tab, not a standalone canvas behind a bookmark. No live API: the
-``WebClient`` is a mock so ``conversations_canvases_create`` / ``canvases_edit`` /
-``conversations_info`` calls are asserted by argument. These tests pin the
-find-or-create order (persisted id -> conversations.info discovery -> create on the
-channel), the full-replace edit shape, the user-token override contract, recreate,
-the no-token skip, the best-effort guarantee that an API failure logs and never
-raises, and that the obsolete bookmark upsert is no longer called from the create
-path.
+The board is the **channel canvas** of ``CRISIS_CHANNEL`` (task 025/027, ADR-0005):
+a permanent *titled* top-bar tab, not a standalone canvas behind a bookmark. No live
+API: the ``WebClient`` is a mock so ``conversations_canvases_create`` /
+``canvases_edit`` / ``conversations_info`` calls are asserted by argument. These
+tests pin the find-or-create order (persisted id -> ``properties.tabs`` discovery ->
+titled create on the channel), the full-replace edit shape, the user-token override
+contract, the reuse-not-delete ``recreate`` (never calls ``canvases_delete``), the
+no-token skip, the best-effort guarantee that an API failure logs and never raises,
+that the create no longer announces (task 027), and that the obsolete bookmark
+upsert is no longer called from the create path.
 """
 
 from collections.abc import Callable
@@ -17,7 +18,7 @@ import pytest
 from pytest_mock import MockerFixture
 from slack_sdk.errors import SlackApiError
 
-from coordinator.board import BOARD_TITLE
+from coordinator.board import BOARD_TAB_TITLE, BOARD_TITLE
 from coordinator.canvas import CoordinatorBoard, update_board
 from entities import Offer
 from matching.audit import AuditEvent
@@ -55,6 +56,31 @@ def _client(mocker: MockerFixture, *, canvas_id: str = "F_BOARD"):
     return client
 
 
+def _info_with_canvas_tab(file_id: str) -> dict:
+    """A ``conversations.info`` response whose ``properties.tabs`` carries a canvas tab.
+
+    Mirrors the live shape (task 027): tabs is a list, and the canvas tab carries its
+    file id under ``data.file_id``. A non-canvas tab is included to prove discovery
+    skips it and picks the first canvas entry.
+    """
+    return {
+        "ok": True,
+        "channel": {
+            "properties": {
+                "tabs": [
+                    {"type": "files", "id": "Ct_FILES", "label": "Files"},
+                    {
+                        "type": "canvas",
+                        "id": "Ct_CANVAS",
+                        "label": "Community Cases",
+                        "data": {"file_id": file_id, "shared_ts": "1700000000.0"},
+                    },
+                ]
+            }
+        },
+    }
+
+
 def _slack_api_error(error: str) -> SlackApiError:
     """A SlackApiError carrying ``error`` in its response (what slack_sdk raises)."""
     return SlackApiError(message=error, response={"ok": False, "error": error})
@@ -78,6 +104,8 @@ def test_first_publish_creates_channel_canvas_with_markdown(
     assert kwargs["channel_id"] == CRISIS_CHANNEL
     assert kwargs["document_content"]["type"] == "markdown"
     assert BOARD_TITLE in kwargs["document_content"]["markdown"]
+    # AC1: the create titles the tab "Community Cases" (else it reads "Untitled").
+    assert kwargs["title"] == BOARD_TAB_TITLE
     # The board is a channel canvas now, never a standalone one.
     client.canvases_create.assert_not_called()
     client.canvases_edit.assert_not_called()
@@ -148,30 +176,75 @@ def test_second_publish_edits_existing_canvas_with_full_replace(
     assert changes[0]["document_content"]["type"] == "markdown"
 
 
-# --- recreate ---------------------------------------------------------------
+# --- recreate: reuse, never delete (task 027) -------------------------------
 
 
-def test_recreate_drops_id_and_creates_fresh_channel_canvas(
+def test_recreate_reuses_in_process_canvas_and_never_deletes(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """recreate forces a brand-new channel canvas even when one already exists.
+    """recreate reuses the existing canvas (edit-in-place) — never a delete, never a new tab.
 
-    The old canvas is deleted first, so a fresh create on the channel no longer
-    collides with ``channel_canvas_already_exists``.
+    AC3: a "fresh" board is a full-replace edit of the one titled tab, not a
+    delete-then-create. After a first publish the board holds the canvas id, so a
+    recreate edits it and creates nothing new.
     """
     client = _client(mocker, canvas_id="F_FIRST")
-    fresh_board.publish(client, USER_TOKEN)
-    client.conversations_canvases_create.return_value = {"ok": True, "canvas_id": "F_SECOND"}
+    fresh_board.publish(client, USER_TOKEN)  # create
+    client.conversations_canvases_create.reset_mock()
 
     new_id = fresh_board.recreate(client, USER_TOKEN)
 
-    assert new_id == "F_SECOND"
-    assert fresh_board.canvas_id == "F_SECOND"
-    assert client.conversations_canvases_create.call_count == 2
-    client.canvases_edit.assert_not_called()
-    # the prior canvas is deleted, not orphaned
-    client.canvases_delete.assert_called_once_with(canvas_id="F_FIRST", token=USER_TOKEN)
+    assert new_id == "F_FIRST"
+    assert fresh_board.canvas_id == "F_FIRST"
+    client.conversations_canvases_create.assert_not_called()  # no second create
+    client.canvases_edit.assert_called_once()
+    assert client.canvases_edit.call_args.kwargs["canvas_id"] == "F_FIRST"
+    client.canvases_delete.assert_not_called()  # NEVER deletes
+
+
+def test_recreate_reuses_persisted_id_and_never_deletes(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """recreate with a persisted id (no in-process id) edits that canvas, never deletes.
+
+    AC3: even with a prior canvas persisted by the other process, recreate reattaches
+    and replaces — it does not delete the prior canvas (a delete leaves an
+    un-removable tombstone tab).
+    """
+    client = _client(mocker, canvas_id="F_SHOULD_NOT_CREATE")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_PERSISTED")
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    new_id = fresh_board.recreate(client, USER_TOKEN)
+
+    assert new_id == "F_PERSISTED"
+    client.conversations_canvases_create.assert_not_called()
+    client.canvases_edit.assert_called_once()
+    assert client.canvases_edit.call_args.kwargs["canvas_id"] == "F_PERSISTED"
+    client.canvases_delete.assert_not_called()  # NEVER deletes
+
+
+def test_recreate_with_no_existing_canvas_creates_titled(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """recreate with nothing to reattach to creates a titled tab — and still never deletes.
+
+    AC3: with no in-process id, no persisted id, and no canvas tab on the channel,
+    recreate falls through to a titled create (the converged publish path).
+    """
+    client = _client(mocker, canvas_id="F_NEW")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    new_id = fresh_board.recreate(client, USER_TOKEN)
+
+    assert new_id == "F_NEW"
+    client.conversations_canvases_create.assert_called_once()
+    assert client.conversations_canvases_create.call_args.kwargs["title"] == BOARD_TAB_TITLE
+    client.canvases_delete.assert_not_called()  # NEVER deletes
 
 
 # --- no-token + best-effort -------------------------------------------------
@@ -522,19 +595,20 @@ def test_persisted_id_loaded_only_once_not_on_every_publish(
     assert client.canvases_edit.call_count == 2
 
 
-# --- Find-or-create: conversations.info discovery of an existing channel canvas ---
+# --- Find-or-create: properties.tabs discovery of an existing channel canvas (task 027) ---
 
 
-def test_discovers_existing_channel_canvas_via_conversations_info(
+def test_discovers_existing_channel_canvas_via_properties_tabs(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """No persisted id, but the channel already has a canvas -> reattach + edit it."""
+    """No persisted id, but properties.tabs has a canvas tab -> reattach + edit it.
+
+    AC2: discovery scans ``properties.tabs`` for the first ``type == "canvas"`` entry
+    and reattaches to its ``data.file_id`` (skipping non-canvas tabs).
+    """
     client = _client(mocker, canvas_id="F_SHOULD_NOT_CREATE")
-    client.conversations_info.return_value = {
-        "ok": True,
-        "channel": {"properties": {"canvas": {"file_id": "F_EXISTING", "is_empty": False}}},
-    }
+    client.conversations_info.return_value = _info_with_canvas_tab("F_EXISTING")
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
     save = mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
 
@@ -549,12 +623,54 @@ def test_discovers_existing_channel_canvas_via_conversations_info(
     save.assert_called_once_with("F_EXISTING")
 
 
-def test_no_existing_channel_canvas_falls_through_to_create(
+def test_discovery_uses_data_id_fallback_when_no_file_id(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """An empty properties.canvas (no channel canvas yet) -> create one."""
+    """AC2: a canvas tab with ``data.id`` but no ``data.file_id`` falls back to ``data.id``."""
+    client = _client(mocker, canvas_id="F_SHOULD_NOT_CREATE")
+    client.conversations_info.return_value = {
+        "ok": True,
+        "channel": {"properties": {"tabs": [{"type": "canvas", "data": {"id": "F_FROM_DATA_ID"}}]}},
+    }
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_FROM_DATA_ID"
+    client.conversations_canvases_create.assert_not_called()
+
+
+def test_discovery_uses_top_level_file_id_fallback(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """AC2: a canvas tab with a top-level ``file_id`` (no ``data``) is still discovered."""
+    client = _client(mocker, canvas_id="F_SHOULD_NOT_CREATE")
+    client.conversations_info.return_value = {
+        "ok": True,
+        "channel": {"properties": {"tabs": [{"type": "canvas", "file_id": "F_TOP_LEVEL"}]}},
+    }
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_TOP_LEVEL"
+    client.conversations_canvases_create.assert_not_called()
+
+
+def test_no_canvas_tab_falls_through_to_create(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """AC2: tabs present but none is a canvas -> discovery returns None -> create one."""
     client = _client(mocker, canvas_id="F_FRESH")
+    client.conversations_info.return_value = {
+        "ok": True,
+        "channel": {"properties": {"tabs": [{"type": "files", "id": "Ct_FILES"}]}},
+    }
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
     mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
 
@@ -562,6 +678,50 @@ def test_no_existing_channel_canvas_falls_through_to_create(
 
     assert canvas_id == "F_FRESH"
     client.conversations_info.assert_called_once()
+    client.conversations_canvases_create.assert_called_once()
+
+
+def test_empty_properties_falls_through_to_create(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """AC2: empty ``properties`` (no tabs at all) -> discovery returns None -> create."""
+    client = _client(mocker, canvas_id="F_FRESH")  # default info = empty properties
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_FRESH"
+    client.conversations_info.assert_called_once()
+    client.conversations_canvases_create.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "malformed_info",
+    [
+        {"ok": True, "channel": {"properties": {"tabs": "not-a-list"}}},
+        {"ok": True, "channel": {"properties": {"tabs": ["not-a-dict", 42]}}},
+        {"ok": True, "channel": {"properties": {"tabs": [{"type": "canvas"}]}}},  # no id at all
+        {"ok": True, "channel": {"properties": None}},
+        {"ok": True, "channel": None},
+        {"ok": True},
+    ],
+)
+def test_malformed_tabs_does_not_raise_and_falls_through_to_create(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+    malformed_info: dict,
+) -> None:
+    """AC2: malformed/missing tabs return None (no raise) -> create degrades cleanly."""
+    client = _client(mocker, canvas_id="F_FRESH")
+    client.conversations_info.return_value = malformed_info
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_FRESH"
     client.conversations_canvases_create.assert_called_once()
 
 
@@ -581,23 +741,20 @@ def test_conversations_info_failure_falls_through_to_create(
     client.conversations_canvases_create.assert_called_once()
 
 
-def test_create_race_recovers_via_discovery(
+def test_create_race_recovers_via_tabs_discovery(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """A channel_canvas_already_exists on create recovers by discovering the canvas.
+    """A channel_canvas_already_exists on create recovers by re-scanning properties.tabs.
 
-    discovery first reports no canvas (so we attempt create), then create loses the
-    race and reports the channel canvas already exists; we re-discover it rather
-    than crashing the board.
+    Discovery first reports no canvas tab (so we attempt create), then create loses
+    the race and reports the channel canvas already exists; we re-discover via the
+    tabs scan rather than crashing the board.
     """
     client = _client(mocker, canvas_id="F_RACE")
     client.conversations_info.side_effect = [
         {"ok": True, "channel": {"properties": {}}},  # first look: none yet
-        {  # after the race: the canvas the other process created
-            "ok": True,
-            "channel": {"properties": {"canvas": {"file_id": "F_WON_RACE"}}},
-        },
+        _info_with_canvas_tab("F_WON_RACE"),  # after the race: the other writer's canvas
     ]
     client.conversations_canvases_create.side_effect = _slack_api_error(
         "channel_canvas_already_exists"
@@ -613,58 +770,42 @@ def test_create_race_recovers_via_discovery(
     save.assert_called_once_with("F_WON_RACE")
 
 
-def test_recreate_still_creates_even_with_persisted_id(
+# --- No announce on create (task 027) ---------------------------------------
+
+
+def test_create_does_not_announce(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """recreate forces a fresh channel canvas regardless of a persisted id (clean demo)."""
-    client = _client(mocker, canvas_id="F_FRESH")
-    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_OLD")
-    save = mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    """AC4: creating a canvas no longer announces — the titled tab IS the discovery.
 
-    new_id = fresh_board.recreate(client, USER_TOKEN)
-
-    assert new_id == "F_FRESH"
-    client.conversations_canvases_create.assert_called_once()
-    client.canvases_edit.assert_not_called()
-    save.assert_called_once_with("F_FRESH")
-    # the persisted prior canvas is deleted before minting fresh
-    client.canvases_delete.assert_called_once_with(canvas_id="F_OLD", token=USER_TOKEN)
-
-
-# --- Announce-on-create discoverability (kept minimal, task 025) ------------
-
-
-def test_create_announces_board_link_once(
-    fresh_board: CoordinatorBoard,
-    mocker: MockerFixture,
-) -> None:
-    """Creating a canvas announces its link once to the coordinator channel."""
+    canvas.py no longer imports ``announce_board``; patch it in the announce module
+    so a stray call (anywhere) would be observed. It must not be called.
+    """
     client = _client(mocker, canvas_id="F_NEW")
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
-    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
-    announce = mocker.patch("coordinator.canvas.announce_board")
+    save = mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    announce = mocker.patch("coordinator.announce.announce_board")
 
     fresh_board.publish(client, USER_TOKEN, team_id="T_TEAM")
 
-    announce.assert_called_once_with(
-        client, canvas_id="F_NEW", team_id="T_TEAM", team_url=None, user_token=USER_TOKEN
-    )
+    announce.assert_not_called()
+    # AC4: the id is still persisted so the cross-process bridge works.
+    save.assert_called_once_with("F_NEW")
 
 
 def test_edit_does_not_announce(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """A board edit (not a create) never re-announces — idempotent discoverability."""
+    """A board edit never announces either — nothing in the board path announces now."""
     client = _client(mocker, canvas_id="F_BOARD")
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
     mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
-    announce = mocker.patch("coordinator.canvas.announce_board")
-    fresh_board.publish(client, USER_TOKEN)  # create -> announces
+    announce = mocker.patch("coordinator.announce.announce_board")
+    fresh_board.publish(client, USER_TOKEN)  # create
 
-    announce.reset_mock()
-    fresh_board.publish(client, USER_TOKEN)  # edit -> must not announce
+    fresh_board.publish(client, USER_TOKEN)  # edit
 
     announce.assert_not_called()
 
@@ -673,10 +814,10 @@ def test_reattached_id_does_not_announce(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """Reattaching to a persisted canvas (edit path) does not announce — only create does."""
+    """Reattaching to a persisted canvas (edit path) does not announce."""
     client = _client(mocker, canvas_id="F_X")
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_FROM_SCRIPT")
-    announce = mocker.patch("coordinator.canvas.announce_board")
+    announce = mocker.patch("coordinator.announce.announce_board")
 
     fresh_board.publish(client, USER_TOKEN)
 
@@ -689,32 +830,28 @@ def test_discovered_canvas_does_not_announce(
 ) -> None:
     """Reattaching to a discovered channel canvas (edit path) does not announce."""
     client = _client(mocker, canvas_id="F_X")
-    client.conversations_info.return_value = {
-        "ok": True,
-        "channel": {"properties": {"canvas": {"file_id": "F_EXISTING"}}},
-    }
+    client.conversations_info.return_value = _info_with_canvas_tab("F_EXISTING")
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
     mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
-    announce = mocker.patch("coordinator.canvas.announce_board")
+    announce = mocker.patch("coordinator.announce.announce_board")
 
     fresh_board.publish(client, USER_TOKEN)
 
     announce.assert_not_called()
 
 
-def test_announce_failure_does_not_break_publish(
+def test_create_never_deletes(
     fresh_board: CoordinatorBoard,
     mocker: MockerFixture,
 ) -> None:
-    """An announce error never breaks the create — best-effort, returns the id."""
+    """AC3: the create path never calls canvases_delete (no tombstones accrue)."""
     client = _client(mocker, canvas_id="F_NEW")
     mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
     mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
-    mocker.patch("coordinator.canvas.announce_board", side_effect=RuntimeError("boom"))
 
-    canvas_id = fresh_board.publish(client, USER_TOKEN)
+    fresh_board.publish(client, USER_TOKEN)
 
-    assert canvas_id == "F_NEW"
+    client.canvases_delete.assert_not_called()
 
 
 # --- The bookmark is obsolete: no longer touched from the create path (task 025) ---

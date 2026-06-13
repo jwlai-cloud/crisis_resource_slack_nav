@@ -10,24 +10,27 @@ Run it (the agent process need not be running — this is a standalone one-shot)
 
     uv run python -m scripts.open_board
 
-It find-or-creates the **channel canvas** of ``CRISIS_CHANNEL`` (a permanent
-top-bar tab — task 025, ADR-0005) owned by the acting user, writes the current
-board into it, **persists the canvas id** to the shared ``.slack/board_canvas_id``
-file, and **announces** the board tab once to ``COORDINATOR_CHANNEL`` (when set). By
-default it REUSES the existing board (reattach to the persisted id, else the
-channel's existing canvas, else create); pass ``--fresh`` to delete the prior board
-and mint a clean one, which is what you want for a clean demo.
+It find-or-creates the **channel canvas** of ``CRISIS_CHANNEL`` (a permanent,
+*titled* "Community Cases" top-bar tab — task 025/027, ADR-0005) owned by the acting
+user, writes the current board into it, and **persists the canvas id** to the shared
+``.slack/board_canvas_id`` file. **Reuse, never delete** (task 027): both the default
+and ``--fresh`` reattach to the existing tab (persisted id, else the channel's
+existing canvas tab, else create titled) and full-replace its content — neither ever
+deletes a canvas, because a delete leaves an un-removable tombstone tab. With an
+empty index that full-replace already renders the clean empty board, so ``--fresh``
+is just a "force a clean re-render" alias; it adds no new tab. The board does NOT
+announce on create any more — the titled tab IS the discovery mechanism, so
+``COORDINATOR_CHANNEL`` is no longer used by the board.
 
-The persisted id is the bridge across processes (task 018): the live agent's first
-board refresh reads that same file and *edits* this canvas instead of minting its
-own — so ``make board`` is the single "mint + persist + announce" entry, and the
-running agent reuses it. The board then auto-updates as Connect / Resolve / Dismiss
-buttons are pressed within the agent process.
+The persisted id is the bridge across processes: the live agent's first board
+refresh reads that same file and *edits* this canvas instead of minting its own — so
+``make board`` is the single "create-or-reuse + persist" entry, and the running
+agent reuses it. The board then auto-updates as Connect / Resolve / Dismiss buttons
+are pressed within the agent process.
 
 Requires ``SLACK_USER_TOKEN`` (the user OAuth token with ``canvases:write``) and
 ``SLACK_BOT_TOKEN`` (carries the WebClient; the user token overrides auth per call)
-in ``.env`` or the environment — see ``.env.example``. ``COORDINATOR_CHANNEL`` is
-optional (empty/unset = no announce, mirroring ``CRISIS_CHANNEL``).
+in ``.env`` or the environment — see ``.env.example``.
 """
 
 import argparse
@@ -51,15 +54,18 @@ logger = logging.getLogger(__name__)
 def main() -> int:
     """Open the coordinator board; return an exit code.
 
-    Default: reuse the existing board (reattach to the persisted canvas, or create
-    one if none exists) — so repeated ``make board`` does NOT pile up canvases.
-    With ``--fresh``: delete the prior board and mint a clean one (for a fresh demo).
+    Both modes REUSE the channel's one titled "Community Cases" tab and full-replace
+    its content — neither deletes a canvas (task 027: a delete leaves an un-removable
+    tombstone tab). Default reattaches (persisted id, else the channel's canvas tab,
+    else create titled). ``--fresh`` is a "force a clean re-render" alias: with an
+    empty index the full-replace already renders the empty board, so a fresh demo
+    start needs no new tab.
     """
     parser = argparse.ArgumentParser(description="Open or refresh the coordinator board.")
     parser.add_argument(
         "--fresh",
         action="store_true",
-        help="Delete the existing board and create a clean one (default: reuse it).",
+        help="Force a clean re-render of the existing board (reuse-not-delete; no new tab).",
     )
     args = parser.parse_args()
 
@@ -88,7 +94,9 @@ def main() -> int:
         logger.error("Could not create the coordinator board canvas — see the warning above.")
         return 1
 
-    logger.info("Coordinator board channel canvas created + persisted: %s", canvas_id)
+    logger.info(
+        "Coordinator board channel canvas ready (reused-or-created) + persisted: %s", canvas_id
+    )
     logger.info("Open it from Slack: the Community Cases tab in the top bar of CRISIS_CHANNEL.")
     return 0
 

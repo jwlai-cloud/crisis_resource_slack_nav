@@ -22,19 +22,19 @@ OFFER_TS = datetime(2026, 3, 21, 9, 30, tzinfo=UTC)
 
 @pytest.fixture(autouse=True)
 def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
-    """Keep the board hook off the real filesystem and Slack.
+    """Keep the board hook off the real filesystem.
 
     Most of these tests stub ``update_board`` outright, but the isolation test
     exercises the *real* best-effort board path. Point its canvas-id store at
-    ``tmp_path`` and stub the announce so no test ever reads/writes the real
-    ``.slack/board_canvas_id`` or posts to a coordinator channel (task 018).
+    ``tmp_path`` so no test ever reads/writes the real ``.slack/board_canvas_id``.
+    The board no longer announces on create (task 027), so there is nothing to stub
+    on the Slack side.
     """
     from coordinator import canvas_store
 
     mocker.patch.object(
         canvas_store, "_id_path", return_value=tmp_path / ".slack" / "board_canvas_id"
     )
-    mocker.patch("coordinator.canvas.announce_board")
 
 
 @pytest.fixture

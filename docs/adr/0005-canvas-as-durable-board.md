@@ -4,9 +4,15 @@
 **Date:** 2026-06-13
 **Amended:** 2026-06-13 (task 025) — the board is now the **channel canvas** of
 `CRISIS_CHANNEL`, a permanent top-bar tab, superseding the original *standalone*
-canvas. See the "Amendment — channel canvas (task 025)" section at the end; the
-core decision (Slack Canvas as the durable, full-replace board on the user token)
-stands.
+canvas. See the "Amendment — channel canvas (task 025)" section.
+**Amended:** 2026-06-13 (task 027) — three corrections from live testing: the tab is
+**titled on create** ("Community Cases"); the lifecycle **never deletes** a canvas
+(reuse + full-replace edit only — a delete leaves an un-removable tombstone tab);
+and discovery scans `properties.tabs` (a channel may have **multiple** canvas tabs),
+not `properties.canvas`. The create **announce** is dropped — the titled tab is the
+discovery. See the "Amendment — titled tab, reuse-not-delete, tabs discovery (task
+027)" section at the end. The core decision (Slack Canvas as the durable,
+full-replace board on the user token) stands.
 
 ## Context
 
@@ -171,3 +177,72 @@ handle is not" — is superseded by this for the channel-canvas case.
 `CRISIS_CHANNEL`) are logged and swallowed; the publisher returns `None` and never
 raises, so a Canvas problem can never break a Connect / Resolve / Dismiss button
 (the degraded-state guardrail), exactly as before.
+
+## Amendment — titled tab, reuse-not-delete, tabs discovery (task 027)
+
+Live testing of the task-025 channel canvas exposed three defects, all rooted in a
+wrong assumption — "a channel has exactly ONE canvas." All three are corrected here;
+the core decision is unchanged.
+
+**1. A channel may have MULTIPLE canvas tabs.** The task-025 amendment assumed one
+canvas per channel. Live `conversations.info` shows the channel's canvas tabs under
+`channel.properties.tabs` as a *list* of entries
+(`{"type":"canvas","id":"Ct…","label":…,"data":{"file_id":"F…","shared_ts":…}}`), and
+`channel.properties.canvas` comes back `None`. A channel can carry several canvas
+tabs (each prior create/delete left one). The "one canvas, `channel_canvas_already_exists`
+on a second create" model was only partly right: a *create* still 409s once a canvas
+exists, but tabs are not 1:1 and are not removed by deleting the canvas.
+
+**2. Deleting a canvas does NOT remove its tab — and there is no API to remove a
+tab.** `canvases_delete` (and `--fresh` recreate, which used it) left a "Deleted
+file" **tombstone tab** in the top bar; every recreate piled up another. There is no
+app-usable API to remove a tab: `conversations.removeTab` returns
+`not_allowed_token_type` for bot/user tokens (browser-session only), and
+`canvases.access.delete` only revokes access. So the board lifecycle **must never
+delete a canvas.**
+
+**3. The create announce was noise (and spam).** `_after_create` posted a board-link
+message to `COORDINATOR_CHANNEL` on every create; repeated creates spammed the
+channel, several links pointing at since-deleted canvases. With a permanent *titled*
+tab the announce adds nothing — the tab IS the discovery.
+
+**Amended decision (task 027).**
+
+- **Title on create.** `conversations.canvases.create` is called with
+  `title="Community Cases"` (the new `coordinator.board.BOARD_TAB_TITLE`, distinct
+  from the long `BOARD_TITLE` H1 inside the document). Without it the tab label is
+  "Untitled"; the document `# H1` is not used as the label. Verified live.
+- **Never delete; always reuse + edit.** The one titled tab is permanent.
+  `CoordinatorBoard.recreate` no longer deletes — it converges with `publish`:
+  reattach (persisted id → `properties.tabs` discovery → create-titled) and
+  full-replace the document. With an empty index that full-replace already renders
+  the empty board, so a "fresh" demo board is just a clean re-render, no new tab.
+  `make board` and `make board ARGS=--fresh` both reuse. **No `canvases_delete` in
+  the board lifecycle.** (`make board --fresh` is now a "force a clean re-render"
+  alias, not a delete.)
+- **Discovery scans `properties.tabs`.** `_discover_channel_canvas_id` reads
+  `channel.properties.tabs`, returns the first `type == "canvas"` entry's
+  `data.file_id` (defensive fallbacks: `data.id`, then a top-level `file_id`).
+  `properties.canvas` is no longer relied on. The persisted id remains the primary,
+  faster reattach key; this tabs scan is the fallback (and the
+  `channel_canvas_already_exists` race recovery re-scans it).
+- **Announce dropped; `COORDINATOR_CHANNEL` obsolete for the board.** The create path
+  (`_after_create`) only persists the id (still needed to bridge processes) and posts
+  nothing. `coordinator/announce.py` and the `COORDINATOR_CHANNEL` env var are now
+  **unused by the board**. Per task 027's scope they are *left in place* (harmless,
+  no cost) rather than deleted — a later cleanup task may remove them. The task-023
+  bookmark was already obsolete (task 025); it stays gone.
+
+**Tombstone-tab cleanup is manual / out of scope.** No API can remove the tombstone
+tabs the prior delete-then-create path accrued; the operator removes them once in the
+Slack UI (right-click the tab → remove). Going forward, never-delete means no new
+tombstones accrue. This is documented here so it is not re-investigated.
+
+**Restart reattach still solved.** Unchanged from task 025 in spirit, but via the
+tabs scan: when the persisted id file is gone, the create path discovers the
+channel's existing canvas tab and reattaches — no fresh canvas, no new tab.
+
+**Best-effort posture preserved.** The tabs scan is wrapped so a malformed/missing
+`properties.tabs` (or an info failure) returns `None` rather than raising; the
+publisher still returns `None` and never raises on any Canvas problem, so a board
+issue can never break a Connect / Resolve / Dismiss button.

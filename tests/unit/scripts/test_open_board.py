@@ -2,9 +2,10 @@
 
 No live API: the WebClient and the board singleton are mocked. These pin the
 exit-code contract — a missing user token fails fast (exit 1, no canvas call), a
-failed open exits 1, success exits 0 — and the reuse-vs-fresh routing: the default
-REUSES the board (``publish``) so repeated ``make board`` never piles up canvases,
-while ``--fresh`` deletes and recreates (``recreate``).
+failed open exits 1, success exits 0 — and the default-vs-fresh routing: the default
+REUSES the board (``publish``), while ``--fresh`` routes to ``recreate``. Both reuse
+the one titled tab and never delete (task 027); ``recreate`` is a clean-re-render
+alias, so repeated ``make board`` never piles up canvases.
 
 ``sys.argv`` is stubbed per test so argparse doesn't read pytest's own argv.
 """
@@ -54,7 +55,7 @@ def test_default_reuses_board_via_publish(mocker: MockerFixture) -> None:
 
 
 def test_fresh_flag_recreates(mocker: MockerFixture) -> None:
-    """--fresh deletes-and-recreates the board via recreate; exit 0."""
+    """--fresh routes to recreate (reuse + clean re-render, never delete); exit 0."""
     _argv(mocker, "--fresh")
     mocker.patch("scripts.open_board.load_dotenv")
     mocker.patch("scripts.open_board.resolve_user_token", return_value="xoxp-coordinator")

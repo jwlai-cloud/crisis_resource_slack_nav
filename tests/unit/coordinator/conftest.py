@@ -22,24 +22,22 @@ EVENT_TS = datetime(2026, 3, 21, 11, 30, tzinfo=UTC)
 
 @pytest.fixture(autouse=True)
 def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
-    """Keep the canvas tests off the real filesystem and Slack by default.
+    """Keep the canvas tests off the real filesystem by default.
 
-    Every canvas test would otherwise read/write the real ``.slack/board_canvas_id``
-    and try to post to a coordinator channel via :func:`coordinator.canvas.publish`.
-    Point the id store at ``tmp_path`` and stub the announce so a test only sees
-    those side effects when it opts in (re-patches them itself). Tests that assert
-    the persistence/announce contract re-patch over these to inspect the calls.
+    Every canvas test would otherwise read/write the real ``.slack/board_canvas_id``.
+    Point the id store at ``tmp_path`` so a test only persists when it opts in
+    (re-patches ``save_canvas_id`` itself). Tests that assert the persistence
+    contract re-patch over this to inspect the calls.
 
-    The bookmark is no longer hooked into the canvas create (task 025: the channel
-    canvas is a permanent tab, superseding the bookmark), so there is nothing to
-    stub there.
+    Neither the bookmark (task 025) nor the announce (task 027) is hooked into the
+    canvas create any more — the channel canvas is a permanent titled tab that IS
+    the discovery mechanism — so there is nothing to stub there.
     """
     from coordinator import canvas_store
 
     mocker.patch.object(
         canvas_store, "_id_path", return_value=tmp_path / ".slack" / "board_canvas_id"
     )
-    mocker.patch("coordinator.canvas.announce_board")
 
 
 @pytest.fixture

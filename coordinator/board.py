@@ -32,9 +32,15 @@ from entities import Offer, Status
 from matching.audit import AuditEvent
 from mocks.server import EvacCentre, RoadClosure
 
-# Title of the standalone canvas. Used both as the create-time title and as the
-# stable handle a coordinator looks for ("the Community Cases board").
+# The H1 rendered at the top of the board document — the full product title a
+# coordinator reads inside the canvas.
 BOARD_TITLE = "Crisis Resource Navigator — Community Cases"
+
+# The channel-canvas *tab label* (task 027). Distinct from the long ``BOARD_TITLE``
+# H1: it is passed as the ``title`` of ``conversations.canvases.create`` so the
+# permanent top-bar tab reads "Community Cases" rather than "Untitled" (the H1
+# inside the document is NOT used as the tab label — verified live 2026-06-13).
+BOARD_TAB_TITLE = "Community Cases"
 
 # The verify-before-relying guardrail, shown once at the top of the board (the
 # same standing note the recall cards carry per item).
