@@ -22,6 +22,12 @@ from recall.blocks import (
 )
 from recall.client import build_query, recall_offers
 from recall.models import RecallError, RecallMatch, match_from_message
+from recall.official_blocks import (
+    OFFICIAL_ADVISORY_BAR_EMOJI,
+    OFFICIAL_INFO_BAR_EMOJI,
+    OFFICIAL_SECTION_HEADER,
+    build_official_blocks,
+)
 from recall.payload import ConnectPayload
 from recall.ranking import need_keywords, rank_matches, score_match, tokenize
 
@@ -29,11 +35,15 @@ __all__ = [
     "ACTION_CONNECT",
     "ACTION_NOT_RELEVANT",
     "ACTION_RESOLVE",
+    "OFFICIAL_ADVISORY_BAR_EMOJI",
+    "OFFICIAL_INFO_BAR_EMOJI",
+    "OFFICIAL_SECTION_HEADER",
     "VERIFY_NOTE",
     "WORKSPACE_BAR_EMOJI",
     "ConnectPayload",
     "RecallError",
     "RecallMatch",
+    "build_official_blocks",
     "build_query",
     "build_recall_blocks",
     "match_from_message",

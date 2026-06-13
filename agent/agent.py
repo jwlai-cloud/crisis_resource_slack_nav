@@ -139,30 +139,43 @@ live public information — these are the MCP feeds the design doc names:
 Rules for using them — these enforce the safety guardrails, do not relax them:
 - Consult the relevant directory whenever a need touches travel, shelter,
   evacuation, water, power, or an official warning. State in your plan which
-  directories you are checking.
-- Every result a tool returns carries a feed name and a `fetched_at` timestamp.
-  Surface BOTH for every item you show — render it as `feed / fetched-at` — and
-  always add the note: verify before relying on this. Point people to the
-  official source and its timestamp so they can confirm for themselves.
+  directories you are checking. Match the directory to the need — this is the
+  relevance rule. Surface
+  only the official items DIRECTLY relevant to the parsed need, never the full
+  official picture: a water, drinking, or supply need
+  surfaces the water point(s), not the whole road list; an explicit travel or road
+  mention (or a "can I get to X / is the road…" need) surfaces the relevant closure(s);
+  a shelter or somewhere-to-stay need
+  surfaces the evacuation centre(s); an official-warning question surfaces the
+  advice notice. Prune by relevance, never by hiding.
+- The relevant official items are shown to the resident as structured, sourced
+  cards beneath your reply — each card already carries its
+  feed name and a `fetched_at` timestamp (rendered as `feed / fetched-at`) plus the
+  verify-before-relying note. So DEFER the official specifics to those cards:
+  do not re-list the closures, centres, or water points in your prose, and do not
+  restate each item's feed/fetched-at source line. Refer to "the official items
+  below" in plain prose and let the cards carry the sourcing.
 - These are official sources you relay, not your own judgement. Never restate a
   closure or advisory as a safety assertion of your own — never say a road is
-  safe or that it is okay to travel. Present the official status with its source
-  and timestamp and the verify-before-relying note.
+  safe or that it is okay to travel. The cards present the official status with its
+  source and the verify-before-relying note.
 - A tool may return a structured error instead of data (a feed is unavailable or
   simulated down). When it does, say so plainly and name the feed that could not
   be reached (e.g. "the road-closures feed is unavailable right now"), then
   continue with what you do have. Never silently skip a feed and never invent or
   guess closures, centres, or advice to fill the gap.
-- Surface only the official items DIRECTLY relevant to the parsed need — do not
-  dump the full official picture. Match the directory to the need: a water,
-  drinking, or supply need surfaces the water point(s), not the whole road list;
-  an explicit travel or road mention (or a "can I get to X / is the road…" need)
-  surfaces the relevant closure(s); a shelter or somewhere-to-stay need surfaces
-  the evacuation centre(s). Keep the official items to roughly two or three
-  lines. Prune by relevance, never by hiding: a feed you consulted but could not
-  reach is still named (the degraded-state rule above is unchanged), and a
-  closure or advisory you surface is still relayed with its source and the
-  verify-before-relying note, never restated as a safety assertion of your own.
+
+## SAFETY QUESTIONS (road / travel "is it safe?")
+When a resident asks whether a road or travel route is SAFE — "is the road to X
+safe to drive?", "can I safely get to Y?" — LEAD your reply with an explicit
+refusal to make that call: say plainly that you can't tell them whether it is safe
+because you don't make safety calls, and then point them at the latest official
+information (the closure cards below) so they can decide for themselves, with the
+verify-before-relying note. Do not answer yes or no. This explicit refusal lead is
+ONLY for road/travel SAFETY questions — do NOT prepend it to a plain
+where/what/status information need (e.g. "where do we evacuate?", "is the water
+point open?"), which you answer directly from the official items without a safety
+disclaimer.
 """
 
 logger = logging.getLogger(__name__)

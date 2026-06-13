@@ -12,20 +12,30 @@ Shared by the message and app-mention listeners. One parse drives two routes:
   reasons over the real data, not invented placeholders) with the authoritative,
   sourced match blocks rendered beneath it — one message, one answer. This kills the
   dual-reply UX from task 003 (a structured block reply *and* a separate LLM reply
-  that invented diverging sources).
+  that invented diverging sources). The reply also appends a labelled "Official
+  information" section beneath the workspace matches (task 028): the relevant official
+  feed items (road closures / evac centres / water points / advice) rendered as
+  sourced, button-free cards via :func:`recall.build_official_blocks`, read
+  best-effort from :func:`coordinator.situation.read_situation`. No feed relevant to
+  the need -> no official section (the no-noise rule); a read failure degrades to no
+  section, never breaking the reply.
 * **Information need** (``need.is_information`` is True) -> a road/travel safety or
   status question, an "where do we evacuate?" question, or an official-warning status
   question. These are answerable ONLY by official sources — there is no tangible
   resource a neighbour could offer — so we route them DIFFERENTLY (task 030): NO
   workspace offer-recall (no index lookup, no RTS call), NO recall match blocks, and
   NO Connect / Not-relevant buttons (a Connect button is meaningless when no offer can
-  satisfy the question). The :class:`NeedRecall` carries no offer matches and an
-  ``llm_context`` instructing the model to answer from the official-directory MCP
-  tools only — never inventing workspace offers. The reply still honours the
-  guardrails the LLM enforces: it never asserts safety, sources + UTC-stamps every
-  official item, and states a degraded feed plainly. The vs-resource line is "can a
-  workspace OFFER satisfy it?" — a thing someone could hand you is a resource need; an
-  official directory (evac centres / road status / warnings) is an information need.
+  satisfy the question). The structured content of an info reply IS the official
+  cards (task 028): :func:`recall.build_official_blocks` renders the relevant official
+  feed items as sourced, button-free cards (the same best-effort situation read),
+  beneath the LLM prose that leads. The :class:`NeedRecall` carries no offer matches
+  and an ``llm_context`` instructing the model to answer from the official-directory
+  MCP tools only — never inventing workspace offers, and deferring the official
+  specifics to the rendered cards. The reply still honours the guardrails the LLM and
+  the cards enforce: it never asserts safety, sources + UTC-stamps every official
+  item, and states a degraded feed plainly. The vs-resource line is "can a workspace
+  OFFER satisfy it?" — a thing someone could hand you is a resource need; an official
+  directory (evac centres / road status / warnings) is an information need.
 
 The recall I/O is async (``recall.client.recall_offers``); listeners are sync Bolt
 handlers, so we bridge with ``asyncio.run``. Ranking uses ``now`` from the clock here
@@ -44,11 +54,13 @@ from slack_sdk.models.blocks import Block
 
 from agent.parsing import parse_message
 from coordinator import update_board
+from coordinator.situation import SituationSnapshot, read_situation
 from entities import Need, Offer
 from matching import build_offer_ack_blocks, match_from_offer, offer_index
 from recall import (
     RecallError,
     RecallMatch,
+    build_official_blocks,
     build_recall_blocks,
     rank_matches,
     recall_offers,
@@ -87,7 +99,23 @@ _INFORMATION_NEED_CONTEXT = (
     "connect with. Never assert that travel or a road is safe; surface the official "
     "information with its source and timestamp and tell the resident to verify before "
     "relying on it. If an official feed is unavailable, say so plainly rather than "
-    "guessing."
+    "guessing. The relevant official items are shown to the resident as structured, "
+    "sourced cards beneath your reply (each already carries its feed name, the "
+    "fetched-at timestamp, and the verify note), so do not re-list each item's full "
+    "feed/fetched-at source line — refer to them in plain prose and let the cards "
+    "carry the sourcing."
+)
+
+# Appended to a RESOURCE need's recall context (task 028) so the model knows the
+# relevant official items are rendered as cards beneath its prose, the same way the
+# workspace matches are. Keeps the prose from re-listing each official item's full
+# feed/fetched-at line (no prose duplication) while still letting it reason over them.
+_OFFICIAL_CARDS_CONTEXT_NOTE = (
+    "\n\nRelevant official feed items (road closures, evac centres / water points, "
+    "advice) are also shown to the resident as structured, sourced cards beneath your "
+    "reply, each carrying its feed name, fetched-at timestamp, and the verify note. "
+    "You may reference them in plain prose, but do not re-list their full "
+    "feed/fetched-at source lines — the cards carry the sourcing."
 )
 
 # Jaccard similarity at/above which an index hit and an RTS hit FROM THE SAME
@@ -139,6 +167,38 @@ class NeedRecall:
 def _event_ts_to_utc(ts: str) -> datetime:
     """Convert a Slack event ``ts`` (string Unix seconds) to an aware-UTC datetime."""
     return datetime.fromtimestamp(float(ts), tz=UTC)
+
+
+def _read_situation_best_effort() -> SituationSnapshot | None:
+    """Read the official situation for the need reply, swallowing any failure (task 028).
+
+    Mirrors the board's :func:`coordinator.canvas._read_situation_best_effort`.
+    :func:`coordinator.situation.read_situation` is itself best-effort and already
+    degrades a down feed to an explicit unavailable marker, but this wrapper also
+    catches an *unexpected* raise so a situation-read problem degrades to *no*
+    official cards rather than breaking the need reply — the workspace matches and the
+    LLM prose always stand (the best-effort guardrail). Returns ``None`` on failure;
+    the caller renders no official section for ``None``.
+    """
+    try:
+        return read_situation()
+    except Exception as exc:
+        logger.warning("Situation read failed; need reply renders without official cards: %s", exc)
+        return None
+
+
+def _official_blocks_best_effort(need: Need) -> list[Block]:
+    """The relevant official cards for ``need``, or ``[]`` on any read failure.
+
+    Reads the situation snapshot best-effort and composes the relevant official cards
+    (:func:`recall.build_official_blocks`, a pure render). A read failure — or no feed
+    relevant to the need — yields ``[]`` (no official section), never a raise: the
+    official cards are additive to the need reply and must never break it.
+    """
+    situation = _read_situation_best_effort()
+    if situation is None:
+        return []
+    return build_official_blocks(need, situation)
 
 
 def _post_offer_ack(
@@ -399,8 +459,9 @@ def route_message(
     # An information need is answerable only by official sources: no workspace offer
     # can satisfy "is the road safe?" or "where do we evacuate?", so we skip recall
     # entirely — no index lookup, no RTS call, no recall/Connect blocks — and hand
-    # back an official-only context (task 030). The empty offer result means the
-    # caller renders no match cards and no Connect button.
+    # back an official-only context (task 030). The relevant official feed items ARE
+    # the structured content here: we render them as sourced cards (task 028), so the
+    # blocks are the official section (no workspace match cards, no Connect button).
     if need.is_information:
         logger.info(
             "Information need (official-only, no offer-recall): %s in %s",
@@ -410,7 +471,7 @@ def route_message(
         return NeedRecall(
             need=need,
             result=[],
-            blocks=[],
+            blocks=_official_blocks_best_effort(need),
             llm_context=_INFORMATION_NEED_CONTEXT,
         )
 
@@ -419,10 +480,24 @@ def route_message(
     )
     result = _merge_recall_results(need, rts_result, requester_id=author)
 
+    # Append the relevant official feed items as sourced cards BENEATH the workspace
+    # match blocks (task 028) — an honest, labelled "Official information" section,
+    # not interleaved into the workspace ranking. Best-effort: no relevant feed (or a
+    # read failure) appends nothing, so the workspace matches + prose always stand.
+    blocks = build_recall_blocks(result, need=need)
+    official_blocks = _official_blocks_best_effort(need)
+    blocks.extend(official_blocks)
+
+    # Keep the LLM context honest: when official cards are shown, tell the model so it
+    # references them in prose without re-listing each item's full source line.
+    llm_context = serialize_recall_context(result)
+    if official_blocks:
+        llm_context += _OFFICIAL_CARDS_CONTEXT_NOTE
+
     logger.info("Recalled context for need: %s in %s", need.need_type, need.location)
     return NeedRecall(
         need=need,
         result=result,
-        blocks=build_recall_blocks(result, need=need),
-        llm_context=serialize_recall_context(result),
+        blocks=blocks,
+        llm_context=llm_context,
     )

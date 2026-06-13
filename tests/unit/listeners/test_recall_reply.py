@@ -172,16 +172,27 @@ def test_information_need_does_not_recall_offers_or_index(mocker: MockerFixture)
 
 
 def test_information_need_produces_no_connect_blocks(mocker: MockerFixture) -> None:
-    """An information need yields NO match/Connect/Not-relevant blocks (AC2)."""
+    """An information need yields NO match/Connect/Not-relevant action blocks (AC2).
+
+    Task 028 amendment: an info need now renders the relevant OFFICIAL feed items as
+    sourced cards (its structured content). Those cards carry NO action buttons — you
+    do not "Connect" to a road closure — so the no-Connect guarantee is intact: there
+    is still no ``actions`` block. We mock the situation read so the official content
+    is deterministic and no real feed/file is touched.
+    """
     mocker.patch.object(recall_reply, "parse_message", return_value=_info_need())
     mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
     mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
     say = mocker.Mock()
 
     outcome = _route(say, text="Is the road to Learmonth safe to drive?", client=mocker.Mock())
 
     assert isinstance(outcome, NeedRecall)
-    assert outcome.blocks == []  # no recall match cards, no action buttons at all
+    # No action buttons anywhere — the official cards are informational only.
+    assert all(b.to_dict()["type"] != "actions" for b in outcome.blocks)
     say.assert_not_called()
 
 
@@ -750,3 +761,290 @@ def test_offer_indexing_refreshes_the_board(mocker: MockerFixture) -> None:
     )
 
     update_board.assert_called_once()
+
+
+# --- Official MCP cards wired into BOTH route branches (task 028) -------------
+#
+# A need reply now surfaces relevant OFFICIAL feed items as sourced cards beneath
+# the workspace matches (resource need) or AS the structured content (info need),
+# read best-effort from coordinator.situation.read_situation. We mock the situation
+# read where recall_reply imports it so no real feed/file is touched.
+
+from coordinator.situation import SituationFeed, SituationSnapshot  # noqa: E402
+from mocks.server import EvacCentre, RoadClosure  # noqa: E402
+
+_OFFICIAL_FETCHED_AT = datetime(2026, 3, 15, 6, 30, tzinfo=UTC)
+_OFFICIAL_UPDATED_AT = datetime(2026, 3, 15, 5, 30, tzinfo=UTC)
+
+
+def _road_feed(*, available: bool = True, detail: str = "") -> SituationFeed:
+    if not available:
+        return SituationFeed(feed="road_closures", available=False, detail=detail)
+    return SituationFeed(
+        feed="road_closures",
+        available=True,
+        fetched_at=_OFFICIAL_FETCHED_AT,
+        records=(
+            RoadClosure(
+                road="Minilya-Exmouth Road",
+                segment="Yannarie River crossing",
+                status="CLOSED",
+                reason="Floodwater over road.",
+                detour="No detour available.",
+                updated_at=_OFFICIAL_UPDATED_AT,
+            ),
+        ),
+    )
+
+
+def _evac_feed() -> SituationFeed:
+    return SituationFeed(
+        feed="evac_centres",
+        available=True,
+        fetched_at=_OFFICIAL_FETCHED_AT,
+        records=(
+            EvacCentre(
+                name="Exmouth Recreation Centre",
+                address="Murat Road, Exmouth WA 6707",
+                status="OPEN",
+                capacity=250,
+                occupancy=168,
+                services=["Emergency water point", "Bedding and shelter"],
+                updated_at=_OFFICIAL_UPDATED_AT,
+            ),
+        ),
+    )
+
+
+def _empty_advice() -> SituationFeed:
+    return SituationFeed(
+        feed="official_advice", available=True, fetched_at=_OFFICIAL_FETCHED_AT, records=()
+    )
+
+
+def _situation(road: SituationFeed, evac: SituationFeed) -> SituationSnapshot:
+    return SituationSnapshot(road_closures=road, evac_centres=evac, official_advice=_empty_advice())
+
+
+def _block_text(blocks: list[object]) -> str:
+    """Flatten all visible block text (section/header text + context elements)."""
+    parts: list[str] = []
+    for block in blocks:
+        d = block.to_dict()
+        text = d.get("text")
+        if isinstance(text, dict) and isinstance(text.get("text"), str):
+            parts.append(text["text"])
+        for element in d.get("elements", []):
+            inner = element.get("text") if isinstance(element, dict) else None
+            if isinstance(inner, str):
+                parts.append(inner)
+    return "\n".join(parts)
+
+
+def _water_need() -> Need:
+    return Need(
+        id=deterministic_id("U_REQ", NEED_TS),
+        requester="U_REQ",
+        need_type="drinking water",
+        location="Exmouth",
+        urgency=Urgency.HIGH,
+        household_size=4,
+        source_ts=NEED_TS,
+    )
+
+
+def _water_match() -> RecallMatch:
+    """A workspace match that shares a resource word with a water need (survives ranking)."""
+    return RecallMatch(
+        text="spare drinking water in Exmouth",
+        author="Jordan",
+        author_id="U1",
+        channel="offers",
+        channel_id="C1",
+        ts=datetime(2026, 3, 21, 9, 30, tzinfo=UTC),
+        permalink="https://x/pw",
+    )
+
+
+def _road_info_need() -> Need:
+    return Need(
+        id=deterministic_id("U_REQ", NEED_TS),
+        requester="U_REQ",
+        need_type="road safety",
+        location="Learmonth",
+        urgency=Urgency.MEDIUM,
+        household_size=1,
+        is_information=True,
+        source_ts=NEED_TS,
+    )
+
+
+def test_info_need_renders_official_cards_as_its_content(mocker: MockerFixture) -> None:
+    """AC1/AC2: an info need (no workspace matches) gets official cards as its blocks."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    text = _block_text(outcome.blocks)
+    assert "Official information" in text  # the official section header
+    assert "Minilya-Exmouth Road" in text  # the relevant closure card
+    assert "CLOSED" in text  # the feed's own status, verbatim
+    assert "fetched 2026-03-15 06:30 UTC" in text  # absolute-UTC stamp
+    # Still official-only: no Connect / Not-relevant action buttons.
+    assert all(b.to_dict()["type"] != "actions" for b in outcome.blocks)
+
+
+def test_info_need_context_notes_official_items_are_cards(mocker: MockerFixture) -> None:
+    """AC1: the info-need llm_context tells the model official items are shown as cards."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    context = outcome.llm_context.lower()
+    assert "card" in context  # the model is told official items render as cards below
+
+
+def test_resource_need_appends_official_cards_beneath_matches(mocker: MockerFixture) -> None:
+    """AC1: a resource need keeps its workspace matches AND appends official cards."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_water_need())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply,
+        "recall_offers",
+        new=mocker.AsyncMock(return_value=[_water_match()]),
+    )
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Need drinking water in Exmouth", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    block_types = [b.to_dict()["type"] for b in outcome.blocks]
+    assert "actions" in block_types  # the workspace match's Connect row is still there
+    text = _block_text(outcome.blocks)
+    assert "Prior offers from this workspace" in text  # workspace header above
+    assert "Official information" in text  # official section beneath
+    assert "Exmouth Recreation Centre" in text  # the relevant water-point card
+
+
+def test_resource_need_official_cards_sit_below_workspace_matches(mocker: MockerFixture) -> None:
+    """AC1: the Official information header renders AFTER the workspace matches header."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_water_need())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply,
+        "recall_offers",
+        new=mocker.AsyncMock(return_value=[_water_match()]),
+    )
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Need drinking water in Exmouth", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    headers = [
+        b.to_dict()["text"]["text"] for b in outcome.blocks if b.to_dict()["type"] == "header"
+    ]
+    assert "Prior offers from this workspace" in headers
+    assert "Official information" in headers
+    assert headers.index("Prior offers from this workspace") < headers.index("Official information")
+
+
+def test_resource_need_with_no_relevant_feed_has_no_official_section(
+    mocker: MockerFixture,
+) -> None:
+    """AC2: a resource need with no relevant feed appends NO official section (no dump)."""
+    formula_need = _need().model_copy(update={"need_type": "baby formula"})
+    formula_match = _match().model_copy(update={"text": "spare baby formula in Exmouth"})
+    mocker.patch.object(recall_reply, "parse_message", return_value=formula_need)
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply,
+        "recall_offers",
+        new=mocker.AsyncMock(return_value=[formula_match]),
+    )
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Need baby formula in Exmouth", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    text = _block_text(outcome.blocks)
+    assert "Official information" not in text  # no relevant feed -> no section
+    assert "Prior offers from this workspace" in text  # the workspace matches still render
+
+
+def test_info_need_degraded_relevant_feed_renders_unavailable_card(
+    mocker: MockerFixture,
+) -> None:
+    """AC3: a relevant-but-down feed renders an explicit unavailable card, never silent."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    down = _situation(_road_feed(available=False, detail="Simulated outage."), _evac_feed())
+    mocker.patch.object(recall_reply, "read_situation", return_value=down)
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    text = _block_text(outcome.blocks).lower()
+    assert "road_closures" in text
+    assert "unavailable" in text
+    assert "simulated outage" in text
+
+
+def test_situation_read_failure_does_not_break_the_need_reply(mocker: MockerFixture) -> None:
+    """AC6: an unexpected situation-read raise degrades to NO official section, never breaks."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_water_need())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply,
+        "recall_offers",
+        new=mocker.AsyncMock(return_value=[_water_match()]),
+    )
+    mocker.patch.object(recall_reply, "read_situation", side_effect=RuntimeError("feeds exploded"))
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Need drinking water in Exmouth", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    text = _block_text(outcome.blocks)
+    # The workspace matches still stand; no official section was appended.
+    assert "Prior offers from this workspace" in text
+    assert "Official information" not in text
+
+
+def test_info_need_situation_read_failure_yields_no_blocks(mocker: MockerFixture) -> None:
+    """AC6: an info need whose situation read fails degrades to empty blocks (prose still leads)."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(recall_reply, "read_situation", side_effect=RuntimeError("feeds exploded"))
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    assert outcome.blocks == []  # no official cards; the LLM prose still answers
+    say.assert_not_called()
