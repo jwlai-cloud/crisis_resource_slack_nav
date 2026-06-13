@@ -112,6 +112,8 @@ def test_recreate_drops_id_and_creates_fresh_canvas(
     assert fresh_board.canvas_id == "F_SECOND"
     assert client.canvases_create.call_count == 2
     client.canvases_edit.assert_not_called()
+    # the prior canvas is deleted, not orphaned
+    client.canvases_delete.assert_called_once_with(canvas_id="F_FIRST", token=USER_TOKEN)
 
 
 def test_publish_without_user_token_is_skipped(
@@ -488,6 +490,8 @@ def test_recreate_still_creates_even_with_persisted_id(
     client.canvases_create.assert_called_once()
     client.canvases_edit.assert_not_called()
     save.assert_called_once_with("F_FRESH")
+    # the persisted prior canvas is deleted before minting fresh
+    client.canvases_delete.assert_called_once_with(canvas_id="F_OLD", token=USER_TOKEN)
 
 
 # --- Announce-on-create discoverability (task 018) --------------------------

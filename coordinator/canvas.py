@@ -203,14 +203,20 @@ class CoordinatorBoard:
 
         The on-demand entry point for the demo: a coordinator can always summon a
         clean board even if a prior one exists, without hunting for an old id. The
-        in-process id is cleared *and* the persisted id is ignored — the create
-        path mints a brand-new canvas, persists it, and announces it. Best-effort
-        like :meth:`publish`.
+        prior canvas (from the in-process field or the persisted store) is DELETED
+        before minting fresh, so repeated recreates never orphan a pile of stale
+        "Community Cases" canvases. Best-effort like :meth:`publish` — a failed
+        delete is logged and never blocks the new board.
         """
         with self._lock:
+            old_id = self._canvas_id or canvas_store.load_canvas_id()
             self._canvas_id = None
-        # Drop the persisted handle too, so recreate always mints fresh rather
-        # than reattaching to a prior canvas via the shared store.
+        if old_id and user_token:
+            try:
+                client.canvases_delete(canvas_id=old_id, token=user_token)
+                logger.info("Deleted prior coordinator board canvas %s", old_id)
+            except Exception as exc:
+                logger.warning("Could not delete prior board canvas %s: %s", old_id, exc)
         return self._publish_fresh(client, user_token, team_id)
 
     def _publish_fresh(

@@ -13,7 +13,7 @@ Run it (the agent process need not be running — this is a standalone one-shot)
 It creates a brand-new standalone Canvas owned by the acting user, writes the
 current board into it, **persists the canvas id** to the shared
 ``.slack/board_canvas_id`` file, and **announces** the board link once to
-``COORDINATOR_CHANNEL`` (when set). Re-running makes a fresh canvas (``recreate``),
+``COORDINATOR_CHANNEL`` (when set). By default it REUSES the existing board; pass
 which is what you want for a clean demo.
 
 The persisted id is the bridge across processes (task 018): the live agent's first
@@ -28,6 +28,7 @@ in ``.env`` or the environment — see ``.env.example``. ``COORDINATOR_CHANNEL``
 optional (empty/unset = no announce, mirroring ``CRISIS_CHANNEL``).
 """
 
+import argparse
 import logging
 import os
 import sys
@@ -46,7 +47,20 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> int:
-    """Create a fresh coordinator board canvas and print its id; return an exit code."""
+    """Open the coordinator board; return an exit code.
+
+    Default: reuse the existing board (reattach to the persisted canvas, or create
+    one if none exists) — so repeated ``make board`` does NOT pile up canvases.
+    With ``--fresh``: delete the prior board and mint a clean one (for a fresh demo).
+    """
+    parser = argparse.ArgumentParser(description="Open or refresh the coordinator board.")
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Delete the existing board and create a clean one (default: reuse it).",
+    )
+    args = parser.parse_args()
+
     load_dotenv(dotenv_path=".env", override=False)
 
     user_token = resolve_user_token(None)
@@ -64,7 +78,10 @@ def main() -> int:
 
     team_id = _resolve_team_id(client, user_token)
 
-    canvas_id = coordinator_board.recreate(client, user_token, team_id)
+    if args.fresh:
+        canvas_id = coordinator_board.recreate(client, user_token, team_id)
+    else:
+        canvas_id = coordinator_board.publish(client, user_token, team_id)
     if canvas_id is None:
         logger.error("Could not create the coordinator board canvas — see the warning above.")
         return 1
