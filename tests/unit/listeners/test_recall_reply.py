@@ -632,3 +632,22 @@ def test_serialize_context_reflects_the_deduped_merged_list(
         line for line in outcome.llm_context.splitlines() if re.match(r"^\d+\. contact=", line)
     ]
     assert len(numbered) == 1
+
+
+def test_offer_indexing_refreshes_the_board(mocker: MockerFixture) -> None:
+    """Indexing an offer refreshes the coordinator board (it appears under Open)."""
+    offer = _offer()
+    mocker.patch.object(recall_reply, "parse_message", return_value=offer)
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    update_board = mocker.patch.object(recall_reply, "update_board")
+    say = mocker.Mock()
+
+    _route(
+        say,
+        text="I have a spare generator in Exmouth, collect any time today",
+        author="U_OFFERER",
+        client=mocker.Mock(),
+    )
+
+    update_board.assert_called_once()

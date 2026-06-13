@@ -29,6 +29,7 @@ from slack_sdk import WebClient
 from slack_sdk.models.blocks import Block
 
 from agent.parsing import parse_message
+from coordinator import update_board
 from entities import Need, Offer
 from matching import build_offer_ack_blocks, match_from_offer, offer_index
 from recall import (
@@ -106,12 +107,27 @@ def _event_ts_to_utc(ts: str) -> datetime:
     return datetime.fromtimestamp(float(ts), tz=UTC)
 
 
-def _post_offer_ack(offer: Offer, *, thread_ts: str, say: Say) -> None:
-    """Index a parsed offer and post its informational, sourced acknowledgement."""
+def _post_offer_ack(
+    offer: Offer,
+    *,
+    thread_ts: str,
+    say: Say,
+    client: WebClient,
+    user_token: str | None,
+    team_id: str | None,
+) -> None:
+    """Index a parsed offer, post its sourced acknowledgement, refresh the board.
+
+    Indexing a new offer is a board state change — it appears under "Open" — so the
+    coordinator board is refreshed here too, not only on the button actions. The
+    refresh is best-effort (``update_board`` never raises), so a Canvas hiccup can
+    never undo the index or the ack.
+    """
     offer_index.add(offer)
     blocks = build_offer_ack_blocks(offer)
     say(blocks=blocks, text="Logged your offer", thread_ts=thread_ts)
     logger.info("Acknowledged offer: %s in %s", offer.resource_type, offer.location)
+    update_board(client, user_token, team_id)
 
 
 def _merge_recall_results(
@@ -325,7 +341,14 @@ def route_message(
         return None
 
     if isinstance(parsed, Offer):
-        _post_offer_ack(parsed, thread_ts=thread_ts, say=say)
+        _post_offer_ack(
+            parsed,
+            thread_ts=thread_ts,
+            say=say,
+            client=client,
+            user_token=user_token,
+            team_id=team_id,
+        )
         return None
 
     if not isinstance(parsed, Need):
