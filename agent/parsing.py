@@ -26,10 +26,24 @@ of three structured results, then extract its fields.
   medication, etc.). Extract: need_type (what is needed), location (where),
   urgency (one of: low, medium, high, critical), and household_size (how many
   people; default 1 if unstated).
+- A NEED also includes a question seeking crisis-relevant official or situational
+  information that an official feed or the workspace could answer about the
+  disaster, such as:
+    - road / travel safety ("is the road to X safe?", "can I drive to X?")
+    - where to evacuate / shelter ("where do we evacuate?")
+    - where to get water / power / supplies ("where can I get drinking water?")
+    - the status of an official warning / closure
+  For an information need, set need_type to the information being sought
+  (e.g. "road safety: Learmonth", "where to evacuate", "where to get water"),
+  location to the place it concerns (if any), urgency on a best-effort reading of
+  the message (default medium if unclear), and household_size 1 unless stated.
 - An OFFER is a volunteer offering a resource. Extract: resource_type (what is
   offered), location, and availability (when / how it can be collected).
-- Anything else — greetings, thanks, questions, coordinator chatter, status
-  updates — is NotACrisisMessage.
+- Anything else — greetings, thanks, social chatter, coordinator status updates
+  ("power's back in town"), and off-topic or social questions — is
+  NotACrisisMessage. A question is only a NEED when an official feed or the
+  workspace could answer it about the disaster; everything social or off-topic
+  stays NotACrisisMessage.
 
 Extract only what the message states. Do not invent locations or quantities. If
 the message is not clearly a need or an offer, return NotACrisisMessage.
