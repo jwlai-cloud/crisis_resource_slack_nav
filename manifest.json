@@ -42,7 +42,8 @@
         "canvases:read",
         "canvases:write",
         "bookmarks:write",
-        "users:read.email"
+        "users:read.email",
+        "bookmarks:read"
       ],
       "bot": [
         "app_mentions:read",
@@ -57,7 +58,8 @@
         "reactions:read",
         "users:read",
         "assistant:write",
-        "bookmarks:write"
+        "bookmarks:write",
+        "bookmarks:read"
       ]
     }
   },
