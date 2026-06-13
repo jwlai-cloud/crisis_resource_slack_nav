@@ -18,11 +18,13 @@ A live-updating standalone canvas is supported by the installed ``slack_sdk``:
 manifest grants ``canvases:read``/``canvases:write`` as user scopes, so the write
 uses ``SLACK_USER_TOKEN`` (the same user token RTS search and the MCP toolset use,
 resolved via :func:`agent.deps.resolve_user_token`). No bot scope is needed. The
-token is applied as a per-call ``Authorization`` header override on the bot-token
-``WebClient`` — the exact pattern :mod:`recall.client` uses for the user-scoped
-search call — rather than constructing a second client. With no user token the
-publish degrades quietly (logs and returns ``None``); it never falls back to the
-bot token, which lacks ``canvases:write``.
+token is applied as slack_sdk's per-call ``token=`` override on the bot-token
+``WebClient`` rather than constructing a second client. (A manual
+``Authorization`` header override — the ``recall.client`` pattern — does NOT work
+for the typed ``canvases_*`` methods: slack_sdk resets Authorization from its own
+token after merging custom headers, so it must be the ``token=`` kwarg.) With no
+user token the publish degrades quietly (logs and returns ``None``); it never falls
+back to the bot token, which lacks ``canvases:write``.
 
 **Durability + restart.** The Canvas is the durable board: Slack persists it, so it
 survives an agent restart even though the in-memory index does not (ADR-0003,
@@ -58,14 +60,12 @@ def _document_content(markdown: str) -> dict[str, str]:
     return {"type": "markdown", "markdown": markdown}
 
 
-def _user_auth(user_token: str) -> dict[str, str]:
-    """The per-call header that authenticates a canvas write as the acting user.
-
-    Mirrors :mod:`recall.client`: the bot-token ``WebClient`` carries the call, but
-    a ``canvases:write`` user scope is required, so we override ``Authorization``
-    per call with the user token rather than building a second client.
-    """
-    return {"Authorization": f"Bearer {user_token}"}
+# The canvas write authenticates as the acting user (a canvases:write USER scope)
+# via slack_sdk's first-class per-call ``token=`` override. NOTE: a manual
+# ``headers={"Authorization": ...}`` override does NOT work for the typed
+# ``canvases_*`` methods — slack_sdk resets Authorization from its own token
+# resolution after merging custom headers, so an empty bot token yields
+# ``not_authed``. ``token=`` is the override that actually takes effect.
 
 
 class CoordinatorBoard:
@@ -190,13 +190,13 @@ class CoordinatorBoard:
         response = client.canvases_create(
             title=BOARD_TITLE,
             document_content=_document_content(markdown),
-            headers=_user_auth(user_token),
+            token=user_token,
         )
         canvas_id = str(response["canvas_id"])
         logger.info("Created coordinator board canvas %s", canvas_id)
         canvas_store.save_canvas_id(canvas_id)
         try:
-            announce_board(client, canvas_id=canvas_id, team_id=team_id)
+            announce_board(client, canvas_id=canvas_id, team_id=team_id, user_token=user_token)
         except Exception as exc:
             # announce_board is already best-effort, but never let an unexpected
             # error here undo a successful create.
@@ -212,7 +212,7 @@ class CoordinatorBoard:
         client.canvases_edit(
             canvas_id=canvas_id,
             changes=[{"operation": "replace", "document_content": _document_content(markdown)}],
-            headers=_user_auth(user_token),
+            token=user_token,
         )
         logger.info("Updated coordinator board canvas %s", canvas_id)
 

@@ -93,3 +93,13 @@ def test_canvas_link_constructs_docs_url_with_team() -> None:
 def test_canvas_link_none_without_team() -> None:
     """Without a team id we cannot build the docs URL — return None, post bare id instead."""
     assert announce.canvas_link(canvas_id="F_BOARD", team_id=None) is None
+
+
+def test_announce_forwards_user_token(mocker: MockerFixture) -> None:
+    """A given user_token is passed to chat_postMessage as the per-call override."""
+    mocker.patch.dict("os.environ", {announce.COORDINATOR_CHANNEL_ENV: "C_COORD"})
+    client = mocker.Mock()
+
+    announce.announce_board(client, canvas_id="F_BOARD", team_id="T_TEAM", user_token="xoxp-u")
+
+    assert client.chat_postMessage.call_args.kwargs["token"] == "xoxp-u"

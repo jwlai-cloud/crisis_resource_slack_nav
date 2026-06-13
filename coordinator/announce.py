@@ -54,13 +54,21 @@ def canvas_link(*, canvas_id: str, team_id: str | None) -> str | None:
     return f"https://slack.com/docs/{team_id}/{canvas_id}"
 
 
-def announce_board(client: WebClient, *, canvas_id: str, team_id: str | None) -> None:
+def announce_board(
+    client: WebClient, *, canvas_id: str, team_id: str | None, user_token: str | None = None
+) -> None:
     """Post the board link once to ``COORDINATOR_CHANNEL``; a no-op when it is off.
 
     Called only on canvas create (idempotent — one post per canvas). Constructs a
     deep link when the team id is known, otherwise names the canvas id so a
     coordinator can still find the board. Best-effort: any failure is logged and
     swallowed, never raised.
+
+    Posts with the per-call ``user_token`` override when given — the standalone
+    ``make board`` process carries no bot token (``slack run`` injects that into the
+    agent, not the script), so the announce must authenticate with the same user
+    token that minted the canvas. The user has ``chat:write``, so it posts as the
+    coordinator. When ``user_token`` is omitted the client's own token is used.
     """
     channel = coordinator_channel_id()
     if channel is None:
@@ -82,7 +90,8 @@ def announce_board(client: WebClient, *, canvas_id: str, team_id: str | None) ->
         )
 
     try:
-        client.chat_postMessage(channel=channel, text=text)
+        kwargs = {"token": user_token} if user_token else {}
+        client.chat_postMessage(channel=channel, text=text, **kwargs)
         logger.info("Announced coordinator board canvas %s to %s", canvas_id, channel)
     except Exception as exc:
         logger.warning("Coordinator board announce failed (board unaffected): %s", exc)

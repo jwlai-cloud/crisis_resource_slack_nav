@@ -59,8 +59,7 @@ def test_create_authenticates_as_user_via_authorization_header(
 
     fresh_board.publish(client, USER_TOKEN)
 
-    headers = client.canvases_create.call_args.kwargs["headers"]
-    assert headers == {"Authorization": f"Bearer {USER_TOKEN}"}
+    assert client.canvases_create.call_args.kwargs["token"] == USER_TOKEN
 
 
 def test_canvas_id_stored_after_create(
@@ -89,7 +88,7 @@ def test_second_publish_edits_existing_canvas_with_full_replace(
     client.canvases_edit.assert_called_once()
     kwargs = client.canvases_edit.call_args.kwargs
     assert kwargs["canvas_id"] == "F_BOARD"
-    assert kwargs["headers"] == {"Authorization": f"Bearer {USER_TOKEN}"}
+    assert kwargs["token"] == USER_TOKEN
     changes = kwargs["changes"]
     assert len(changes) == 1
     assert changes[0]["operation"] == "replace"
@@ -325,7 +324,9 @@ def test_create_announces_board_link_once(
 
     fresh_board.publish(client, USER_TOKEN, team_id="T_TEAM")
 
-    announce.assert_called_once_with(client, canvas_id="F_NEW", team_id="T_TEAM")
+    announce.assert_called_once_with(
+        client, canvas_id="F_NEW", team_id="T_TEAM", user_token=USER_TOKEN
+    )
 
 
 def test_edit_does_not_announce(

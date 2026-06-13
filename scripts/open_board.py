@@ -62,7 +62,7 @@ def main() -> int:
         token=os.environ.get("SLACK_BOT_TOKEN"),
     )
 
-    team_id = _resolve_team_id(client)
+    team_id = _resolve_team_id(client, user_token)
 
     canvas_id = coordinator_board.recreate(client, user_token, team_id)
     if canvas_id is None:
@@ -74,15 +74,17 @@ def main() -> int:
     return 0
 
 
-def _resolve_team_id(client: WebClient) -> str | None:
+def _resolve_team_id(client: WebClient, user_token: str) -> str | None:
     """Best-effort team id for the announce deep link; ``None`` if it can't be read.
 
-    The script has no Bolt context, so it asks Slack via ``auth.test``. A failure
-    (token issue, API down) just means the announce posts the bare canvas id
-    instead of a deep link — never a reason to abort the board create.
+    The script has no Bolt context and no bot token (``slack run`` injects that into
+    the agent, not here), so it asks Slack via ``auth.test`` authenticated with the
+    same user token that mints the canvas. A failure (token issue, API down) just
+    means the announce posts the bare canvas id instead of a deep link — never a
+    reason to abort the board create.
     """
     try:
-        return str(client.auth_test()["team_id"])
+        return str(client.auth_test(token=user_token)["team_id"])
     except Exception as exc:
         logger.info("Could not resolve team id for the board link (will post bare id): %s", exc)
         return None
