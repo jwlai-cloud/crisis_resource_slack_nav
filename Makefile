@@ -2,7 +2,10 @@
 # Single-package repo: every target runs at the root via uv.
 
 .PHONY: install test unit-tests integration-tests lint-check lint-fix \
-        format-check format-fix pre-commit build ci run board seed-demo help
+        format-check format-fix pre-commit build ci run board seed-demo deploy help
+
+# Deploy target: gce (default, free-tier e2-micro) or fly. `make deploy TARGET=fly`.
+TARGET ?= gce
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -48,3 +51,6 @@ board: ## Open the coordinator board — reuse the one titled tab, never delete.
 
 seed-demo: ## Seed the Exmouth scenario into CRISIS_CHANNEL (idempotent; ARGS=--fresh to wipe + re-seed)
 	uv run python -m scripts.seed_demo $(ARGS)
+
+deploy: ## Deploy the always-on worker. Default gce (free e2-micro); `make deploy TARGET=fly`. See deploy/README.md.
+	./deploy/deploy.sh $(TARGET)

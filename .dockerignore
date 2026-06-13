@@ -1,0 +1,55 @@
+# Keep the build context lean: ship only what the worker runs.
+# Anything excluded here never enters `docker build`'s context.
+
+# Local virtualenv — rebuilt inside the image by `uv sync`.
+.venv/
+venv/
+env/
+
+# Version control + history.
+.git/
+.gitattributes
+
+# Python caches / build artifacts.
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Tests + docs — not needed at runtime (dev group is dropped via --no-dev anyway).
+tests/
+docs/
+*.md
+!README.md
+
+# Slack CLI internals + local sandbox state.
+.slack/
+
+# Diagrams / binary assets.
+*.png
+*.svg
+
+# Secrets and local config — NEVER bake these into an image layer.
+.env
+.env.*
+!.env.example
+deploy/.env.deploy
+
+# The deploy artifacts themselves don't belong inside the image.
+deploy/
+Dockerfile
+.dockerignore
+
+# OS / editor cruft.
+.DS_Store
+.idea/
+.vscode/
+.github/
+.claude/
+logs/
+data/

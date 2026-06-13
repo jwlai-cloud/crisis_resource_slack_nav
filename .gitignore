@@ -1,6 +1,8 @@
 # Secrets / environment
 .env*
 !.env.example
+# Commit the deploy template; deploy/.env.deploy (real secrets) stays ignored.
+!deploy/.env.deploy.example
 
 # Python
 .venv/
