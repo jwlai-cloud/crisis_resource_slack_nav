@@ -29,14 +29,30 @@ of three structured results, then extract its fields.
 - A NEED also includes a question seeking crisis-relevant official or situational
   information that an official feed or the workspace could answer about the
   disaster, such as:
-    - road / travel safety ("is the road to X safe?", "can I drive to X?")
+    - road / travel safety or status ("is the road to X safe?", "can I drive to
+      X?", "is the X road open?")
     - where to evacuate / shelter ("where do we evacuate?")
     - where to get water / power / supplies ("where can I get drinking water?")
     - the status of an official warning / closure
-  For an information need, set need_type to the information being sought
-  (e.g. "road safety: Learmonth", "where to evacuate", "where to get water"),
-  location to the place it concerns (if any), urgency on a best-effort reading of
-  the message (default medium if unclear), and household_size 1 unless stated.
+
+  For EVERY need, also set is_information:
+    - is_information = true when the question can be answered ONLY by an official
+      source and there is no tangible resource a neighbour could hand over —
+      road/travel safety or status, evacuation/shelter locations (evac centres are
+      an official directory, not a neighbour's offer), and the status of an
+      official warning or closure.
+    - is_information = false for any request for a tangible resource a neighbour
+      could offer, whether phrased as a statement OR a question — "need water",
+      "anyone got a spare bed?", and crucially "where can I get water / fuel / baby
+      formula / a generator / a bed?". A "where can I get <resource>" question is a
+      RESOURCE need (is_information = false), NOT an information need: a neighbour's
+      offer can satisfy it.
+
+  For an information need (is_information = true), set need_type to the information
+  being sought WITHOUT repeating the place (e.g. "road safety", "road status",
+  "where to evacuate", "official warning status") and put the place it concerns in
+  location. Set urgency on a best-effort reading (default medium if unclear) and
+  household_size 1 unless stated.
 - An OFFER is a volunteer offering a resource. Extract: resource_type (what is
   offered), location, and availability (when / how it can be collected).
 - Anything else — greetings, thanks, social chatter, coordinator status updates
@@ -51,12 +67,21 @@ the message is not clearly a need or an offer, return NotACrisisMessage.
 
 
 class ParsedNeed(BaseModel):
-    """Fields the model extracts for a need (id/requester/ts added by us)."""
+    """Fields the model extracts for a need (id/requester/ts added by us).
+
+    ``is_information`` marks a need answerable ONLY by official sources (road
+    safety/status, evacuation locations, official-warning status) with no tangible
+    resource a neighbour could offer. It defaults ``False`` so a plain resource
+    request — including a "where can I get <resource>" question — stays a resource
+    need; the routing layer skips workspace offer-recall + Connect only when it is
+    ``True`` (task 030).
+    """
 
     need_type: str
     location: str
     urgency: str
     household_size: int = 1
+    is_information: bool = False
 
 
 class ParsedOffer(BaseModel):
@@ -113,6 +138,7 @@ def parse_message(
             location=parsed.location,
             urgency=parsed.urgency,
             household_size=parsed.household_size,
+            is_information=parsed.is_information,
             source_ts=ts,
         )
     if isinstance(parsed, ParsedOffer):

@@ -41,6 +41,24 @@ def _need() -> Need:
     )
 
 
+def _info_need() -> Need:
+    """An information need (road safety): answerable only by official sources (030).
+
+    need_type names the info sought without the place embedded (AC4); the place
+    stays in location. ``is_information=True`` is what routes it official-only.
+    """
+    return Need(
+        id=deterministic_id("U_REQ", NEED_TS),
+        requester="U_REQ",
+        need_type="road safety",
+        location="Learmonth",
+        urgency=Urgency.MEDIUM,
+        household_size=1,
+        is_information=True,
+        source_ts=NEED_TS,
+    )
+
+
 def _offer() -> Offer:
     return Offer(
         id=deterministic_id("U_OFFERER", OFFER_TS),
@@ -126,6 +144,87 @@ def test_need_returns_recall_without_posting(mocker: MockerFixture) -> None:
     # The LLM context carries the real data (contact, timestamp) for the prose.
     assert "<@U1>" in outcome.llm_context
     assert "spare generator in Exmouth" in outcome.llm_context
+
+
+# --- Information needs route official-only: no offer-recall, no Connect (task 030) --
+#
+# An information need ("is the road to X safe?", "where do we evacuate?") is
+# answerable ONLY by official sources, so route_message must NOT call recall_offers
+# or the offer index, must produce NO recall match blocks, and must yield an
+# official-only llm_context. The resource-need path (above + below) is unchanged.
+
+
+def test_information_need_does_not_recall_offers_or_index(mocker: MockerFixture) -> None:
+    """An information need runs NO offer-recall: recall_offers and the index untouched (AC2)."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_info_need())
+    recall_spy = mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    index = OfferIndex()
+    keyword_spy = mocker.patch.object(index, "keyword_lookup", wraps=index.keyword_lookup)
+    mocker.patch.object(recall_reply, "offer_index", index)
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe to drive?", client=mocker.Mock())
+
+    recall_spy.assert_not_called()  # no RTS call
+    keyword_spy.assert_not_called()  # no offer-index lookup
+    assert isinstance(outcome, NeedRecall)
+    assert outcome.result == []  # carries no offer matches
+
+
+def test_information_need_produces_no_connect_blocks(mocker: MockerFixture) -> None:
+    """An information need yields NO match/Connect/Not-relevant blocks (AC2)."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe to drive?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    assert outcome.blocks == []  # no recall match cards, no action buttons at all
+    say.assert_not_called()
+
+
+def test_information_need_context_is_official_only(mocker: MockerFixture) -> None:
+    """The info need's llm_context steers the model to official sources, no offers (AC2)."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe to drive?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    context = outcome.llm_context.lower()
+    assert "official" in context  # answer from official sources
+    assert "do not" in context and "offer" in context  # do not invent workspace offers
+
+
+def test_resource_need_still_recalls_and_renders_connect(mocker: MockerFixture) -> None:
+    """REGRESSION (AC3): a resource need still recalls offers and renders Connect buttons.
+
+    The default _need() is a resource need (is_information False), so the unchanged
+    path runs: recall_offers is called and the rendered blocks carry the Connect
+    action row.
+    """
+    mocker.patch.object(recall_reply, "parse_message", return_value=_need())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    recall_spy = mocker.patch.object(
+        recall_reply, "recall_offers", new=mocker.AsyncMock(return_value=[_match()])
+    )
+    say = mocker.Mock()
+
+    outcome = _route(
+        say,
+        text="Family of 4 in Exmouth, no power — need a generator",
+        client=mocker.Mock(),
+    )
+
+    recall_spy.assert_called_once()  # offer-recall ran for the resource need
+    assert isinstance(outcome, NeedRecall)
+    assert outcome.result == [_match()]
+    block_types = [b.to_dict()["type"] for b in outcome.blocks]
+    assert "actions" in block_types  # Connect / Not-relevant row rendered
 
 
 def test_need_with_degraded_recall_returns_unavailable(mocker: MockerFixture) -> None:

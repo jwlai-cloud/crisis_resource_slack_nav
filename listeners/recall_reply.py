@@ -5,13 +5,27 @@ Shared by the message and app-mention listeners. One parse drives two routes:
 * **Offer** -> add it to the in-memory index (``matching.index``) and post a short
   *informational* acknowledgement (sourced + timestamped, no action buttons). The
   offer ack is its own single reply; the caller does not compose a need reply for it.
-* **Need** -> consult the index *first*, then the Real-Time Search API, merge both
-  hit sets and rank the combined list, then hand the result back to the caller as a
-  :class:`NeedRecall`. The caller composes **one** reply: the LLM prose (which is
-  given the recall result as context so it reasons over the real data, not invented
-  placeholders) with the authoritative, sourced match blocks rendered beneath it —
-  one message, one answer. This kills the dual-reply UX from task 003 (a structured
-  block reply *and* a separate LLM reply that invented diverging sources).
+* **Resource need** (``need.is_information`` is False) -> consult the index *first*,
+  then the Real-Time Search API, merge both hit sets and rank the combined list, then
+  hand the result back to the caller as a :class:`NeedRecall`. The caller composes
+  **one** reply: the LLM prose (which is given the recall result as context so it
+  reasons over the real data, not invented placeholders) with the authoritative,
+  sourced match blocks rendered beneath it — one message, one answer. This kills the
+  dual-reply UX from task 003 (a structured block reply *and* a separate LLM reply
+  that invented diverging sources).
+* **Information need** (``need.is_information`` is True) -> a road/travel safety or
+  status question, an "where do we evacuate?" question, or an official-warning status
+  question. These are answerable ONLY by official sources — there is no tangible
+  resource a neighbour could offer — so we route them DIFFERENTLY (task 030): NO
+  workspace offer-recall (no index lookup, no RTS call), NO recall match blocks, and
+  NO Connect / Not-relevant buttons (a Connect button is meaningless when no offer can
+  satisfy the question). The :class:`NeedRecall` carries no offer matches and an
+  ``llm_context`` instructing the model to answer from the official-directory MCP
+  tools only — never inventing workspace offers. The reply still honours the
+  guardrails the LLM enforces: it never asserts safety, sources + UTC-stamps every
+  official item, and states a degraded feed plainly. The vs-resource line is "can a
+  workspace OFFER satisfy it?" — a thing someone could hand you is a resource need; an
+  official directory (evac centres / road status / warnings) is an information need.
 
 The recall I/O is async (``recall.client.recall_offers``); listeners are sync Bolt
 handlers, so we bridge with ``asyncio.run``. Ranking uses ``now`` from the clock here
@@ -55,6 +69,26 @@ _CONTEXT_MAX_MATCHES = 5
 # context — enough to reason and rank over, without paying for a wall of text the
 # model only summarises. Truncated snippets get a trailing ellipsis.
 _CONTEXT_SNIPPET_MAX = 200
+
+# The LLM context for an INFORMATION need (task 030): a road/travel safety or
+# status question, an evacuation-location question, or an official-warning status
+# question. No workspace offer-recall ran for it — there is no tangible resource a
+# neighbour could offer — so the context steers the model to the official-directory
+# MCP tools and explicitly forbids inventing workspace offers, while keeping the
+# guardrails the system prompt already enforces (never assert safety; source + UTC
+# every official item; say so plainly if a feed is degraded).
+_INFORMATION_NEED_CONTEXT = (
+    "This is an INFORMATION need: it asks for official/situational information "
+    "(road or travel safety/status, where to evacuate or shelter, or the status of "
+    "an official warning), which can be answered ONLY from official sources — there "
+    "is no neighbour's offer that satisfies it. Answer ONLY from the official "
+    "directory MCP tools (road closures, evac centres, official warnings). Do NOT "
+    "refer to or invent any workspace offers or prior offers, and offer no person to "
+    "connect with. Never assert that travel or a road is safe; surface the official "
+    "information with its source and timestamp and tell the resident to verify before "
+    "relying on it. If an official feed is unavailable, say so plainly rather than "
+    "guessing."
+)
 
 # Jaccard similarity at/above which an index hit and an RTS hit FROM THE SAME
 # AUTHOR are treated as cross-source twins (task 016 amendment, the SECONDARY
@@ -324,9 +358,15 @@ def route_message(
 
     * **Offer** -> indexed and acknowledged here (its own single reply); returns
       ``None`` so the caller treats it as fully handled.
-    * **Need** -> consults the index + RTS, merges and ranks, and returns a
-      :class:`NeedRecall` carrying the ranked result, the composed match
-      ``blocks``, and the ``llm_context``. The caller composes the single reply.
+    * **Resource need** (``need.is_information`` False) -> consults the index + RTS,
+      merges and ranks, and returns a :class:`NeedRecall` carrying the ranked
+      result, the composed match ``blocks``, and the ``llm_context``. The caller
+      composes the single reply.
+    * **Information need** (``need.is_information`` True) -> answerable only by
+      official sources, so it runs NO offer-recall (no index lookup, no RTS call) and
+      returns a :class:`NeedRecall` with an empty result, NO match/Connect blocks,
+      and an official-only ``llm_context`` (task 030). The caller still composes the
+      single reply from the LLM prose alone.
     * **Neither** -> returns ``None`` (nothing posted).
 
     Failures inside recall degrade explicitly to a :class:`RecallError` carried in
@@ -355,6 +395,25 @@ def route_message(
         return None
 
     need: Need = parsed
+
+    # An information need is answerable only by official sources: no workspace offer
+    # can satisfy "is the road safe?" or "where do we evacuate?", so we skip recall
+    # entirely — no index lookup, no RTS call, no recall/Connect blocks — and hand
+    # back an official-only context (task 030). The empty offer result means the
+    # caller renders no match cards and no Connect button.
+    if need.is_information:
+        logger.info(
+            "Information need (official-only, no offer-recall): %s in %s",
+            need.need_type,
+            need.location,
+        )
+        return NeedRecall(
+            need=need,
+            result=[],
+            blocks=[],
+            llm_context=_INFORMATION_NEED_CONTEXT,
+        )
+
     rts_result = asyncio.run(
         recall_offers(need, client, user_token, team_id, bot_user_id, request_text=text)
     )
