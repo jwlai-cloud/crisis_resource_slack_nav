@@ -26,6 +26,9 @@ from matching.index import OfferIndex
 OFFER_TS = datetime(2026, 3, 21, 9, 30, tzinfo=UTC)
 NEED_TS = datetime(2026, 3, 21, 11, 30, tzinfo=UTC)
 CHANNEL = "C_CRISIS"
+OPERATOR = "U_OPERATOR"
+BOT_USER_ID = "U_AGENT"
+B_APP = "B_APP"
 
 
 def _offer(*, offerer: str = "U_OFFERER", source_ts: datetime = OFFER_TS) -> Offer:
@@ -142,6 +145,114 @@ def test_history_is_fetched_for_the_given_channel(
     backfill.backfill_offer_index(client, channel_id=CHANNEL, user_token=None, limit=42)
 
     client.conversations_history.assert_called_once_with(channel=CHANNEL, limit=42)
+
+
+# --- 032 AC1/AC2/AC3: skip guard aligned with task 031 (skip own posts, not any bot) ---
+
+
+def test_seeded_offer_with_bot_id_is_indexed(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """An operator/integration offer (real user + a bot_id) is indexed, not dropped.
+
+    Mirrors the seed-demo payload shape: messages posted through the app's WebClient
+    carry a real ``user`` AND a ``bot_id``. The old blanket ``bot_id`` skip dropped
+    them; with ``bot_user_id`` set we skip only the agent's own posts, so this offer
+    now reaches the index (AC1).
+    """
+    offer = _offer(offerer=OPERATOR)
+    messages = [_msg(text="Offering: a generator", user=OPERATOR, bot_id=B_APP)]
+    mocker.patch.object(
+        backfill, "parse_message", side_effect=_parser({"Offering: a generator": offer})
+    )
+    client = _history_client(mocker, messages)
+
+    count = backfill.backfill_offer_index(
+        client, channel_id=CHANNEL, user_token=None, bot_user_id=BOT_USER_ID
+    )
+
+    assert count == 1
+    assert fresh_index.lookup(offer.id) == offer
+
+
+def test_agents_own_post_is_skipped_by_user_identity(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """The agent's own past post (user == bot_user_id) is skipped, never parsed (AC2)."""
+    parse_spy = mocker.patch.object(backfill, "parse_message", side_effect=_parser({}))
+    messages = [_msg(text="On it — I'll surface matches.", user=BOT_USER_ID, bot_id=B_APP)]
+    client = _history_client(mocker, messages)
+
+    count = backfill.backfill_offer_index(
+        client, channel_id=CHANNEL, user_token=None, bot_user_id=BOT_USER_ID
+    )
+
+    assert count == 0
+    assert fresh_index.all_offers() == []
+    parse_spy.assert_not_called()
+
+
+def test_bot_user_id_none_falls_back_to_bot_id_skip(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """When bot_user_id is unknown, the defensive bot_id skip applies (AC3).
+
+    A bot post (carries a bot_id, real user) is dropped without parsing, exactly as
+    the live handler does when it cannot identify itself by user id.
+    """
+    parse_spy = mocker.patch.object(backfill, "parse_message", side_effect=_parser({}))
+    messages = [_msg(text="Offering: a generator", user=OPERATOR, bot_id=B_APP)]
+    client = _history_client(mocker, messages)
+
+    count = backfill.backfill_offer_index(
+        client, channel_id=CHANNEL, user_token=None, bot_user_id=None
+    )
+
+    assert count == 0
+    assert fresh_index.all_offers() == []
+    parse_spy.assert_not_called()
+
+
+def test_bot_user_id_none_still_indexes_a_plain_user_offer(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """bot_user_id None drops only bot_id posts; a plain user offer still indexes (AC3)."""
+    offer = _offer(offerer=OPERATOR)
+    messages = [_msg(text="Offering: a generator", user=OPERATOR)]
+    mocker.patch.object(
+        backfill, "parse_message", side_effect=_parser({"Offering: a generator": offer})
+    )
+    client = _history_client(mocker, messages)
+
+    count = backfill.backfill_offer_index(
+        client, channel_id=CHANNEL, user_token=None, bot_user_id=None
+    )
+
+    assert count == 1
+    assert fresh_index.lookup(offer.id) == offer
+
+
+def test_other_bot_offer_is_indexed_when_bot_user_id_known(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """With bot_user_id set, a DIFFERENT bot's offer (user != bot_user_id) is parsed.
+
+    Aligns with 031's trade-off: only the agent's OWN posts are skipped by identity;
+    other bot/integration posts are parsed (parse_message classifies them).
+    """
+    offer = _offer(offerer="U_OTHER_BOT")
+    messages = [_msg(text="Offering: a generator", user="U_OTHER_BOT", bot_id="B_OTHER")]
+    mocker.patch.object(
+        backfill, "parse_message", side_effect=_parser({"Offering: a generator": offer})
+    )
+    client = _history_client(mocker, messages)
+
+    count = backfill.backfill_offer_index(
+        client, channel_id=CHANNEL, user_token=None, bot_user_id=BOT_USER_ID
+    )
+
+    assert count == 1
+    assert fresh_index.lookup(offer.id) == offer
 
 
 # --- AC2: best-effort — parse-raise skips one; history-fetch raise -> 0 ---
@@ -327,8 +438,68 @@ def test_runner_indexes_then_publishes_board(
     mocker.patch.object(backfill.threading, "Thread", side_effect=_run_synchronously)
     client = mocker.Mock()
 
+    client.auth_test.return_value = {"user_id": BOT_USER_ID}
+
     backfill.maybe_backfill_on_start(client, user_token="xoxp-x", team_id="T1")
 
     assert calls == ["sweep", "board"]
-    sweep.assert_called_once_with(client, channel_id=CHANNEL, user_token="xoxp-x")
+    sweep.assert_called_once_with(
+        client, channel_id=CHANNEL, user_token="xoxp-x", bot_user_id=BOT_USER_ID
+    )
+    board.assert_called_once_with(client, "xoxp-x", "T1")
+
+
+# --- 032 AC5: maybe_backfill_on_start resolves bot_user_id best-effort + passes it ---
+
+
+def _synchronous_thread(mocker: MockerFixture) -> Callable[..., object]:
+    """A threading.Thread stand-in whose .start() runs the target synchronously."""
+
+    def _factory(*, target: Callable[[], None], **_kwargs: object) -> object:
+        runner = mocker.Mock()
+        runner.start.side_effect = target
+        return runner
+
+    return _factory
+
+
+def test_resolves_bot_user_id_and_passes_it_to_sweep(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """The runner resolves bot_user_id via auth_test and forwards it to the sweep (AC5)."""
+    mocker.patch.object(backfill, "_backfill_enabled", return_value=True)
+    mocker.patch.object(backfill, "designated_channel_id", return_value=CHANNEL)
+    sweep = mocker.patch.object(backfill, "backfill_offer_index", return_value=0)
+    mocker.patch.object(backfill, "update_board")
+    mocker.patch.object(backfill.threading, "Thread", side_effect=_synchronous_thread(mocker))
+    client = mocker.Mock()
+    client.auth_test.return_value = {"user_id": BOT_USER_ID}
+
+    backfill.maybe_backfill_on_start(client, user_token="xoxp-x", team_id="T1")
+
+    client.auth_test.assert_called_once_with()
+    sweep.assert_called_once_with(
+        client, channel_id=CHANNEL, user_token="xoxp-x", bot_user_id=BOT_USER_ID
+    )
+
+
+def test_auth_test_failure_does_not_break_the_sweep(
+    mocker: MockerFixture, fresh_index: OfferIndex
+) -> None:
+    """auth_test raising -> bot_user_id resolves to None; the sweep still runs (AC5).
+
+    Resolving bot_user_id is best-effort and must never raise out of the daemon-thread
+    sweep, so a failure falls back to None (the defensive bot_id skip path).
+    """
+    mocker.patch.object(backfill, "_backfill_enabled", return_value=True)
+    mocker.patch.object(backfill, "designated_channel_id", return_value=CHANNEL)
+    sweep = mocker.patch.object(backfill, "backfill_offer_index", return_value=0)
+    board = mocker.patch.object(backfill, "update_board")
+    mocker.patch.object(backfill.threading, "Thread", side_effect=_synchronous_thread(mocker))
+    client = mocker.Mock()
+    client.auth_test.side_effect = RuntimeError("auth_test down")
+
+    backfill.maybe_backfill_on_start(client, user_token="xoxp-x", team_id="T1")
+
+    sweep.assert_called_once_with(client, channel_id=CHANNEL, user_token="xoxp-x", bot_user_id=None)
     board.assert_called_once_with(client, "xoxp-x", "T1")

@@ -76,22 +76,44 @@ def _backfill_enabled() -> bool:
     return os.environ.get(BACKFILL_ON_START_ENV, "").strip().lower() in _TRUTHY
 
 
+def _resolve_bot_user_id(client: WebClient) -> str | None:
+    """Resolve the agent's own ``user_id`` via ``auth.test``; ``None`` on any failure.
+
+    Best-effort: the sweep runs in a daemon thread (task 026) and must never raise,
+    so an ``auth.test`` failure (or a response missing ``user_id``) degrades to
+    ``None`` — which sends :func:`backfill_offer_index` down the defensive ``bot_id``
+    fallback rather than crashing the backfill (task 031 alignment).
+    """
+    try:
+        return client.auth_test().get("user_id")
+    except Exception as exc:
+        logger.warning("Backfill could not resolve bot_user_id via auth.test: %s", exc)
+        return None
+
+
 def backfill_offer_index(
     client: WebClient,
     *,
     channel_id: str,
     user_token: str | None,
     limit: int = _DEFAULT_HISTORY_LIMIT,
+    bot_user_id: str | None = None,
 ) -> int:
     """Sweep ``channel_id``'s recent history, indexing every parsed Offer; return count.
 
     Fetches up to ``limit`` messages via ``conversations.history`` (the bot token
     already has ``channels:history``), then for each message:
 
-    * skips bot messages (``bot_id``), message subtypes (edits/joins/etc.), and
-      messages with no ``text`` or no ``user`` — mirroring ``handle_message``'s
-      guards so the agent's own acks and the system join/announce posts are not
-      re-parsed as offers;
+    * skips the agent's OWN past posts and message-less/subtype events — mirroring
+      ``handle_message``'s self-guard (task 031): we skip by identity
+      (``msg["user"] == bot_user_id``), not the mere presence of a ``bot_id``. A
+      seeded/operator/integration offer posted through the app's WebClient carries a
+      real ``user`` AND a ``bot_id``; the old blanket ``bot_id`` skip dropped it
+      before parsing, so seeded offers never reached the index. We now drop only the
+      agent's own acks/replies (which carry the bot's user id), falling back to the
+      old ``bot_id`` skip only when ``bot_user_id`` is unknown — identical to
+      ``listeners.events.message.handle_message``. Subtypes (edits/joins) and
+      messages with no ``text``/``user`` are still skipped;
     * parses the remaining messages with :func:`agent.parsing.parse_message`, each
       wrapped in its own try/except so one bad parse skips only that message;
     * adds every parsed :class:`~entities.Offer` to the module-level
@@ -105,6 +127,10 @@ def backfill_offer_index(
     never raise into agent startup. ``user_token`` is accepted for signature
     stability and as an optional override; the bot client already carries
     ``channels:history``, so the default fetch uses the client's own token.
+
+    Trade-off (inherited from 031/ADR-0004): skipping only the agent's own posts also
+    lets posts from *other* bots/integrations in the channel be parsed;
+    ``parse_message`` classifies them and chatter is silently dropped.
     """
     try:
         response = client.conversations_history(channel=channel_id, limit=limit)
@@ -117,9 +143,17 @@ def backfill_offer_index(
     for message in messages:
         if not isinstance(message, dict):
             continue
-        # Mirror handle_message's skip guards: bot posts, subtypes (edits, joins,
-        # the agent's own acks come back as bot messages), and message-less events.
-        if message.get("bot_id") or message.get("subtype"):
+        # Skip message subtypes (edits, deletes, joins, message_changed, etc.).
+        if message.get("subtype"):
+            continue
+        # Mirror handle_message's self-guard (task 031): skip our OWN posts by identity
+        # (user == bot_user_id), not any bot. Operator/integration API posts have a
+        # real user (+ a bot_id) and ARE processed. Fall back to the old bot_id skip
+        # only when we can't identify ourselves by user id.
+        if bot_user_id:
+            if message.get("user") == bot_user_id:
+                continue
+        elif message.get("bot_id"):
             continue
         text = message.get("text")
         user = message.get("user")
@@ -159,14 +193,17 @@ def maybe_backfill_on_start(
     * ``CRISIS_CHANNEL`` is set (:func:`listeners.channel_gate.designated_channel_id`
       returns a channel) — there is nothing to back-fill without a channel.
 
-    When open, a background **daemon** thread runs :func:`backfill_offer_index` over
-    that channel and then publishes the board once via
-    :func:`coordinator.update_board`, so the canvas reflects the backfilled cases
-    (and is no longer republished from an empty index after a restart). The thread is
-    a daemon so it never blocks ``SocketModeHandler.start()`` nor delays interpreter
-    shutdown.
+    When open, a background **daemon** thread resolves the agent's own ``bot_user_id``
+    best-effort (so the sweep can skip the agent's own past posts by identity — task
+    031), runs :func:`backfill_offer_index` over that channel, and then publishes the
+    board once via :func:`coordinator.update_board`, so the canvas reflects the
+    backfilled cases (and is no longer republished from an empty index after a
+    restart). The thread is a daemon so it never blocks ``SocketModeHandler.start()``
+    nor delays interpreter shutdown.
 
-    Never raises: the gate checks are cheap and the spawned work is best-effort.
+    Never raises: the gate checks are cheap and the spawned work is best-effort —
+    resolving ``bot_user_id`` is wrapped so an ``auth.test`` failure degrades to
+    ``None`` (the defensive ``bot_id`` fallback) rather than breaking the sweep.
     """
     if not _backfill_enabled():
         logger.info("Startup offer-index backfill disabled (%s not set)", BACKFILL_ON_START_ENV)
@@ -177,7 +214,10 @@ def maybe_backfill_on_start(
         return
 
     def _run() -> None:
-        backfill_offer_index(client, channel_id=channel_id, user_token=user_token)
+        bot_user_id = _resolve_bot_user_id(client)
+        backfill_offer_index(
+            client, channel_id=channel_id, user_token=user_token, bot_user_id=bot_user_id
+        )
         update_board(client, user_token, team_id)
 
     logger.info("Starting offer-index backfill for %s in the background", channel_id)
