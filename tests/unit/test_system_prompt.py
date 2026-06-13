@@ -105,6 +105,15 @@ OFFICIAL_DIRECTORY_ANCHORS = [
     # A feed error is stated by name, never silently skipped (guardrail 4).
     ("degraded by name", "name the feed that could not"),
     ("no invented feeds", "never invent or\n  guess closures, centres, or advice"),
+    # Relevance pruning (task 012): include only need-relevant official items,
+    # capped to a couple of lines — prune by relevance, never by hiding.
+    ("prune by relevance", "only the official items DIRECTLY relevant to the parsed need"),
+    ("water -> water point", "drinking, or supply need surfaces the water point(s)"),
+    ("travel -> closures", "surfaces the relevant closure(s)"),
+    ("shelter -> evac", "shelter or somewhere-to-stay need surfaces"),
+    ("brevity cap", "Keep the official items to roughly two or three"),
+    # Pruning never hides a degraded feed or weakens never-assert-safety.
+    ("prune not hide", "Prune by relevance, never by hiding"),
 ]
 
 
@@ -122,3 +131,24 @@ def test_official_directories_names_all_three_tools() -> None:
     """The prompt advertises all three mock MCP tools so the model knows they exist."""
     for tool in ("get_road_closures", "get_evac_centres", "get_official_advice"):
         assert tool in SYSTEM_PROMPT, f"Official-directory tool not advertised: {tool}"
+
+
+def test_official_items_relevance_pruning_is_anchored() -> None:
+    """The need-relevance pruning rule is pinned in the prompt (task 012).
+
+    Born from a live finding (task 009): a need reply dumped the FULL official
+    picture (every closure + water point + all evac centres) at one resident.
+    The prompt must tell the model to include only official items DIRECTLY
+    relevant to the parsed need, mapped per need type, capped to a couple of
+    lines — and to prune by relevance, never by hiding, so a degraded feed is
+    still named (guardrail 4) and safety is never asserted (guardrail 2).
+    """
+    # Only need-relevant official items, mapped by need type.
+    assert "only the official items DIRECTLY relevant to the parsed need" in SYSTEM_PROMPT
+    assert "drinking, or supply need surfaces the water point(s)" in SYSTEM_PROMPT
+    assert "surfaces the relevant closure(s)" in SYSTEM_PROMPT
+    assert "shelter or somewhere-to-stay need surfaces" in SYSTEM_PROMPT
+    # Brevity cap.
+    assert "Keep the official items to roughly two or three" in SYSTEM_PROMPT
+    # Pruning must not weaken guardrails 2 and 4: prune by relevance, not by hiding.
+    assert "Prune by relevance, never by hiding" in SYSTEM_PROMPT
