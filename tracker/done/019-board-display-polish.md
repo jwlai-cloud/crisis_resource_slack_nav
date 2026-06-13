@@ -103,3 +103,46 @@ Before this change those rendered as `offered by <@U0BA67L9HRS>` and
 - `compose_board_markdown` is backward-compatible (`names` optional, defaults to bare
   ids); no caller outside `coordinator/` exists.
 - Did NOT commit — handing off to the Tester.
+
+### [Tester] 2026-06-13 14:30 — QA
+
+**Test summary**
+- Format / lint / pre-commit: PASS (`ruff format --check` 86 files formatted; `ruff check` all passed; unit suite green)
+- Unit tests: 341 passed / 0 failed (coordinator subset 72/72 in isolation)
+- Integration tests: 5 passed / 1 skipped (live-provider key absent — expected) / 0 failed
+- Warnings: 0 (`filterwarnings=["error"]` enforced; double-run + isolated subset all clean)
+
+**E2E adversarial pass** (real composer + `resolve_display_names` + publish boundary, mocked WebClient, no live network)
+- Happy path (realistic Exmouth state: camp-beds MATCHED + generator OPEN, connect + dismiss audit lines): board renders `Rosario Bennet` / `Dana Lee` / `Sam Okafor`, `the camp beds offer`, NO `<@...>` syntax, NO raw uuid, verify-note + `2026-03-21 09:30 UTC` timestamps present — PASS
+- Break (a) boundary/state — users_info reports deleted user / no profile fields → `{}` resolved → row renders bare id `U_GONE`, no crash — PASS
+- Break (b) failure mode — no user token → zero `users_info` calls, board renders all bare ids (`U_X`, `U_Y`) + verify note — PASS
+- Break (c) malformed input — audit target neither `offer:` nor `offerer:` (`weird-raw-target`, empty string) → rendered verbatim, never dropped/blanked — PASS
+- Break (d) large input — 500 offers / 5 distinct offerers → exactly 5 `users_info` calls (deduped), board renders fine — PASS
+- Break (e) malformed responses — `None`, `{ok:False}`, `{user:"not-a-dict"}`, `{user:{profile:"nope"}}`, SDK `ValueError` → all degrade to `{}`, never raise — PASS
+- Precedence — `display_name > profile.real_name > top-level real_name > name > omit` exhaustively verified — PASS
+- Double-run / isolated-subset pollution — none; counts stable across runs — PASS
+
+**Acceptance criteria**
+- [x] AC1 PASS — Resolve user ids to display names. Composer pure (board.py imports only `datetime`/`entities`/`matching.audit`; no Slack/WebClient/token ref); `users_info` lives only in `coordinator/names.py:75`, fetched at the publish boundary `coordinator/canvas.py:84 _compose_with_names`. Token via `token=` override (`names.py:75`), asserted reaching the API by `test_names.py::test_uses_user_token_via_token_override` and `test_canvas.py::test_publish_resolves_names_and_threads_them_into_the_board` (call.args[1] == token). One call per distinct id: `test_one_lookup_per_distinct_id` + adversarial 500→5. Precedence + bare-id fallback: `test_falls_back_to_real_name_when_display_name_blank`, `test_failed_lookup_omits_that_id`, `test_case_row_falls_back_to_bare_id_when_name_unknown`.
+- [x] AC2 PASS — Humanize audit targets. `_humanize_target` (board.py:128): `offer:<uuid>`→resource (`test_activity_line_humanizes_offer_target_to_resource`), unknown offer id→bare target (`test_activity_line_falls_back_to_bare_target_when_offer_absent`), `offerer:<id>`→name (`test_activity_line_resolves_offerer_target_to_name`), unknown prefix→verbatim (adversarial break c).
+- [x] AC3 PASS — Guardrails intact. Every case row keeps source + timestamp; verify note at top; no safety assertion (`test_board_carries_verify_note_and_asserts_no_safety` passes); board reads audit trail only, no auto-action (composer pure, no state mutation). Confirmed visually in adversarial happy-path render.
+- [x] AC4 PASS — Tests mirror tree (`tests/unit/coordinator/test_names.py` new), mocked WebClient/users_info, AAA, zero warnings.
+- [ ] [HUMAN] AC5 — Live render on real Canvas via `slack run` / Block Kit Builder. NOT RUN — requires authed sandbox + real TTY + human visual confirmation; out of agent scope. `slack` CLI is on PATH but cannot drive an interactive live session non-interactively. Awaiting human verification.
+
+**017/018 regression**
+- Public signatures unchanged (`update_board(client, user_token, team_id)`, `publish`, `recreate` — git diff touches only internal `_compose_with_names`/`_person_ids`). Button handlers (connect/resolve/dismiss in `crisis_buttons.py:246,280,314`), offer-index refresh (`recall_reply.py:130`), and `scripts/open_board.py:67 recreate` all call the unchanged surface — board still updates on offer-index + button actions. All 72 coordinator + canvas tests pass.
+
+**Evidence**
+```
+$ make pre-commit
+86 files already formatted / All checks passed! / 341 passed in 1.43s
+$ make unit-tests   → 341 passed (run 1) / 341 passed (run 2)
+$ make integration-tests → 5 passed, 1 skipped (run 1 & 2)
+$ uv run pytest tests/unit/coordinator → 72 passed in 0.14s
+```
+
+**Other issues found**
+- None blocking. `code-review` plugin not configured (no `.claude/settings.json` entry) — advisory step N/A.
+- Note (non-blocking): `resolve_display_names`'s broad `except Exception` is the intended degraded-state guardrail and the publish boundary double-wraps it (`_compose_with_names` try/except). Belt-and-braces, correct for "a names lookup never breaks a board refresh."
+
+**VERDICT: PASS** (AC1–AC4 verified with evidence; AC5 is [HUMAN], correctly NOT RUN)

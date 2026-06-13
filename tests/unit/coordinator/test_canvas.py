@@ -15,6 +15,7 @@ from pytest_mock import MockerFixture
 from coordinator.board import BOARD_TITLE
 from coordinator.canvas import CoordinatorBoard, update_board
 from entities import Offer
+from matching.audit import AuditEvent
 
 USER_TOKEN = "xoxp-user-token"
 
@@ -179,13 +180,91 @@ def test_publish_renders_current_index_and_audit_state(
     offer = make_offer(offerer="U_LIVE", resource_type="defibrillator")
     mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[offer])
     mocker.patch("coordinator.canvas.audit_trail.list_events", return_value=[])
+    mocker.patch("coordinator.canvas.resolve_display_names", return_value={})
     client = _client(mocker, canvas_id="F_BOARD")
 
     fresh_board.publish(client, USER_TOKEN)
 
     markdown = client.canvases_create.call_args.kwargs["document_content"]["markdown"]
     assert "defibrillator" in markdown
-    assert "<@U_LIVE>" in markdown
+    # No names resolved -> bare id rendered (degraded but coherent).
+    assert "U_LIVE" in markdown
+
+
+def test_publish_resolves_names_and_threads_them_into_the_board(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+    make_offer: Callable[..., Offer],
+) -> None:
+    """publish fetches display names for every actor/offerer id and renders them."""
+    offer = make_offer(offerer="U_LIVE", resource_type="defibrillator")
+    mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[offer])
+    mocker.patch("coordinator.canvas.audit_trail.list_events", return_value=[])
+    resolve = mocker.patch(
+        "coordinator.canvas.resolve_display_names", return_value={"U_LIVE": "Liv Rivera"}
+    )
+    client = _client(mocker, canvas_id="F_BOARD")
+
+    fresh_board.publish(client, USER_TOKEN)
+
+    # The publish path (impure boundary) does the lookup with the user token.
+    resolve.assert_called_once()
+    call = resolve.call_args
+    assert call.args[0] is client
+    assert call.args[1] == USER_TOKEN
+    assert "U_LIVE" in call.args[2]  # the id set to resolve
+    markdown = client.canvases_create.call_args.kwargs["document_content"]["markdown"]
+    assert "Liv Rivera" in markdown
+
+
+def test_publish_collects_actor_and_offerer_ids_for_resolution(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+    make_offer: Callable[..., Offer],
+    make_event: Callable[..., AuditEvent],
+) -> None:
+    """The id set spans offerers, audit actors, and offerer:<id> targets."""
+    offer = make_offer(offerer="U_OFFERER")
+    actor_event = make_event(actor_id="U_ACTOR", action="connect", target="offer:x")
+    offerer_target_event = make_event(
+        actor_id="U_ACTOR2", action="connect", target="offerer:U_TARGET"
+    )
+    mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[offer])
+    mocker.patch(
+        "coordinator.canvas.audit_trail.list_events",
+        return_value=[actor_event, offerer_target_event],
+    )
+    resolve = mocker.patch("coordinator.canvas.resolve_display_names", return_value={})
+    client = _client(mocker, canvas_id="F_BOARD")
+
+    fresh_board.publish(client, USER_TOKEN)
+
+    id_set = resolve.call_args.args[2]
+    assert {"U_OFFERER", "U_ACTOR", "U_ACTOR2", "U_TARGET"} <= id_set
+
+
+def test_publish_swallows_name_resolution_failure(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+    make_offer: Callable[..., Offer],
+) -> None:
+    """A name-lookup failure never breaks the board update — best-effort guardrail.
+
+    ``resolve_display_names`` is itself best-effort, but the publish path must not
+    crash even if it raised unexpectedly: the board still renders with bare ids.
+    """
+    offer = make_offer(offerer="U_LIVE", resource_type="defibrillator")
+    mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[offer])
+    mocker.patch("coordinator.canvas.audit_trail.list_events", return_value=[])
+    mocker.patch("coordinator.canvas.resolve_display_names", side_effect=RuntimeError("names_boom"))
+    client = _client(mocker, canvas_id="F_BOARD")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_BOARD"
+    markdown = client.canvases_create.call_args.kwargs["document_content"]["markdown"]
+    assert "defibrillator" in markdown
+    assert "U_LIVE" in markdown
 
 
 def test_update_board_helper_delegates_to_singleton_publish(

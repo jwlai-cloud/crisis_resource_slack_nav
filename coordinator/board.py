@@ -71,18 +71,38 @@ def _format_ts(ts: datetime) -> str:
     return ts.strftime(_TIMESTAMP_FORMAT)
 
 
-def _case_row(offer: Offer) -> str:
+# Prefixes the button handlers write on an audit target (see
+# ``crisis_buttons._offer_target``): an offer by its id, or an offerer by user id.
+_OFFER_TARGET_PREFIX = "offer:"
+_OFFERER_TARGET_PREFIX = "offerer:"
+
+
+def _person(user_id: str, names: dict[str, str]) -> str:
+    """Render a user id as a display name when known, else the bare id.
+
+    The canvas does NOT resolve ``<@id>`` mention syntax (task 019), so we
+    substitute the resolved display name. With no name for the id we fall back to
+    the bare id — never a crash, never an empty string.
+    """
+    return names.get(user_id, user_id)
+
+
+def _case_row(offer: Offer, names: dict[str, str]) -> str:
     """One sourced + timestamped case row for an offer.
 
-    Names the resource and location, the offerer (as a tappable Slack mention),
-    and the offer's post time — the same who/what/when sourcing the recall cards
-    carry. Rendered as a markdown bullet so the status section reads as a list.
+    Names the resource and location, the offerer (by resolved display name, or
+    the bare id when unresolved), and the offer's post time — the same
+    who/what/when sourcing the recall cards carry. Rendered as a markdown bullet
+    so the status section reads as a list.
     """
     when = _format_ts(offer.source_ts)
-    return f"- *{offer.resource_type}* in {offer.location} — offered by <@{offer.offerer}> · {when}"
+    offerer = _person(offer.offerer, names)
+    return f"- *{offer.resource_type}* in {offer.location} — offered by {offerer} · {when}"
 
 
-def _status_section(status: Status, heading: str, offers: list[Offer]) -> list[str]:
+def _status_section(
+    status: Status, heading: str, offers: list[Offer], names: dict[str, str]
+) -> list[str]:
     """The markdown lines for one status group: an h2 heading then its case rows.
 
     Offers are sorted newest-first by post time so the freshest case is on top.
@@ -99,38 +119,73 @@ def _status_section(status: Status, heading: str, offers: list[Offer]) -> list[s
     if not group:
         lines.append(_NO_CASES)
         return lines
-    lines.extend(_case_row(offer) for offer in group)
+    lines.extend(_case_row(offer, names) for offer in group)
     return lines
 
 
-def _activity_line(event: AuditEvent) -> str:
+def _humanize_target(target: str, offers: list[Offer], names: dict[str, str]) -> str:
+    """Render an audit target as something a coordinator can read.
+
+    The handlers record a target verbatim as ``offer:<uuid>`` or
+    ``offerer:<id>``. Neither reads well on screen, so:
+
+    * ``offer:<uuid>`` resolves against ``offers`` to "the <resource_type> offer"
+      (e.g. "the camp beds offer"); if the offer is not in the list we fall back
+      to the bare target string so the line is never dropped or blanked.
+    * ``offerer:<id>`` resolves the id to a display name via ``names`` (bare id
+      when unresolved).
+    * Anything else renders verbatim — the log never silently swallows a target.
+    """
+    if target.startswith(_OFFER_TARGET_PREFIX):
+        offer_id = target[len(_OFFER_TARGET_PREFIX) :]
+        for offer in offers:
+            if str(offer.id) == offer_id:
+                return f"the {offer.resource_type} offer"
+        return target
+    if target.startswith(_OFFERER_TARGET_PREFIX):
+        user_id = target[len(_OFFERER_TARGET_PREFIX) :]
+        return _person(user_id, names)
+    return target
+
+
+def _activity_line(event: AuditEvent, offers: list[Offer], names: dict[str, str]) -> str:
     """One activity-log line: actor / action / target / when.
 
-    The actor renders as a tappable mention, the action as a human verb, the
-    target verbatim (the ``offer:<id>`` / ``offerer:<id>`` string the handler
-    recorded), and the time as aware-UTC. Every confirmed action leaves one line.
+    The actor renders by resolved display name (bare id when unresolved), the
+    action as a human verb, and the target humanized — an ``offer:<uuid>`` shows
+    the resource ("the camp beds offer"), an ``offerer:<id>`` shows the offerer's
+    name — with the time as aware-UTC. Every confirmed action leaves one line.
     """
     verb = _ACTION_LABELS.get(event.action, event.action)
     when = _format_ts(event.ts)
-    return f"- <@{event.actor_id}> {verb} `{event.target}` · {when}"
+    actor = _person(event.actor_id, names)
+    target = _humanize_target(event.target, offers, names)
+    return f"- {actor} {verb} {target} · {when}"
 
 
-def _activity_section(events: list[AuditEvent]) -> list[str]:
+def _activity_section(
+    events: list[AuditEvent], offers: list[Offer], names: dict[str, str]
+) -> list[str]:
     """The activity-log section: an h2 heading then one line per audit event.
 
     Events render newest-first (the trail stores insertion order; we reverse for
     display). An empty trail renders the heading plus an explicit empty-state
-    line.
+    line. Each line is humanized against ``offers`` (to name the targeted
+    resource) and ``names`` (to name the people).
     """
     lines = ["## Activity log"]
     if not events:
         lines.append(_NO_ACTIVITY)
         return lines
-    lines.extend(_activity_line(event) for event in reversed(events))
+    lines.extend(_activity_line(event, offers, names) for event in reversed(events))
     return lines
 
 
-def compose_board_markdown(offers: list[Offer], events: list[AuditEvent]) -> str:
+def compose_board_markdown(
+    offers: list[Offer],
+    events: list[AuditEvent],
+    names: dict[str, str] | None = None,
+) -> str:
     """Render the full coordinator board as a Canvas ``markdown`` string.
 
     Pure ``state -> markdown``: groups ``offers`` by :class:`~entities.Status`
@@ -138,14 +193,22 @@ def compose_board_markdown(offers: list[Offer], events: list[AuditEvent]) -> str
     log. The output is the value for a Canvas ``document_content`` of
     ``{"type": "markdown", "markdown": <this>}``.
 
+    ``names`` maps user id -> display name (resolved by the publisher's impure
+    boundary, :func:`coordinator.names.resolve_display_names`, and passed in so
+    this stays pure). A canvas renders ``<@id>`` mention syntax literally rather
+    than as a name, so case rows and activity lines substitute the resolved name;
+    any id missing from ``names`` falls back to the bare id (never a crash). With
+    ``names`` omitted (``None``) every person renders as the bare id.
+
     The board always renders every status heading and the activity heading, even
     when empty (explicit empty states), so a coordinator reading it after a restart
     — when the in-memory index is empty but the Canvas still holds the last board —
     sees a coherent, intentionally-empty board rather than a blank document.
     """
+    names = names or {}
     lines: list[str] = [f"# {BOARD_TITLE}", "", VERIFY_NOTE, ""]
     for status, heading in _STATUS_ORDER:
-        lines.extend(_status_section(status, heading, offers))
+        lines.extend(_status_section(status, heading, offers, names))
         lines.append("")
-    lines.extend(_activity_section(events))
+    lines.extend(_activity_section(events, offers, names))
     return "\n".join(lines).rstrip() + "\n"

@@ -49,15 +49,56 @@ from slack_sdk import WebClient
 from coordinator import canvas_store
 from coordinator.announce import announce_board
 from coordinator.board import BOARD_TITLE, compose_board_markdown
-from matching.audit import audit_trail
+from coordinator.names import resolve_display_names
+from entities import Offer
+from matching.audit import AuditEvent, audit_trail
 from matching.index import offer_index
 
 logger = logging.getLogger(__name__)
+
+# Prefix a button handler writes when an audit target names an offerer by id (see
+# ``crisis_buttons._offer_target``); the user id after it is worth resolving too.
+_OFFERER_TARGET_PREFIX = "offerer:"
 
 
 def _document_content(markdown: str) -> dict[str, str]:
     """The Canvas ``document_content`` payload for a markdown body."""
     return {"type": "markdown", "markdown": markdown}
+
+
+def _person_ids(offers: list[Offer], events: list[AuditEvent]) -> set[str]:
+    """Every distinct user id the board renders as a person.
+
+    Spans offerers on every case row, the actor on every audit event, and the
+    offerer id carried in an ``offerer:<id>`` audit target — so the name lookup
+    covers every id the board would otherwise show raw.
+    """
+    ids: set[str] = {offer.offerer for offer in offers}
+    for event in events:
+        ids.add(event.actor_id)
+        if event.target.startswith(_OFFERER_TARGET_PREFIX):
+            ids.add(event.target[len(_OFFERER_TARGET_PREFIX) :])
+    return ids
+
+
+def _compose_with_names(client: WebClient, user_token: str) -> str:
+    """Compose the current board, resolving every person id to a display name.
+
+    The impure boundary the pure composer relies on: it snapshots the live
+    offer-index + audit-trail state, best-effort resolves the people's display
+    names via ``users.info`` (a canvas does not resolve ``<@id>`` mention syntax),
+    and threads the resulting ``{id: name}`` map into
+    :func:`compose_board_markdown`. A names-lookup failure is swallowed — the
+    board still composes with bare ids rather than breaking the refresh.
+    """
+    offers = offer_index.all_offers()
+    events = audit_trail.list_events()
+    try:
+        names = resolve_display_names(client, user_token, _person_ids(offers, events))
+    except Exception as exc:
+        logger.warning("Display-name resolution failed; rendering bare ids: %s", exc)
+        names = {}
+    return compose_board_markdown(offers, events, names)
 
 
 # The canvas write authenticates as the acting user (a canvases:write USER scope)
@@ -115,7 +156,7 @@ class CoordinatorBoard:
             logger.info("Coordinator board update skipped: no user token (canvases:write needed)")
             return None
         try:
-            markdown = compose_board_markdown(offer_index.all_offers(), audit_trail.list_events())
+            markdown = _compose_with_names(client, user_token)
             with self._lock:
                 canvas_id = self._canvas_id
                 if canvas_id is None:
@@ -162,7 +203,7 @@ class CoordinatorBoard:
             logger.info("Coordinator board update skipped: no user token (canvases:write needed)")
             return None
         try:
-            markdown = compose_board_markdown(offer_index.all_offers(), audit_trail.list_events())
+            markdown = _compose_with_names(client, user_token)
             with self._lock:
                 canvas_id = self._create(client, user_token, markdown, team_id)
                 self._canvas_id = canvas_id

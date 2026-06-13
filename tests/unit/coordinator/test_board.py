@@ -54,7 +54,7 @@ def test_offers_grouped_by_status_under_their_headings(
 def test_every_case_row_is_sourced_and_timestamped(
     make_offer: Callable[..., Offer],
 ) -> None:
-    """A case row carries offerer (as a mention), resource, location, and post time."""
+    """A case row carries offerer (by display name), resource, location, post time."""
     offer = make_offer(
         offerer="U_OFFERER",
         resource_type="generator",
@@ -62,11 +62,11 @@ def test_every_case_row_is_sourced_and_timestamped(
         source_ts=datetime(2026, 3, 21, 9, 30, tzinfo=UTC),
     )
 
-    markdown = compose_board_markdown([offer], [])
+    markdown = compose_board_markdown([offer], [], names={"U_OFFERER": "Rosario Bennet"})
 
     assert "*generator*" in markdown
     assert "Exmouth" in markdown
-    assert "<@U_OFFERER>" in markdown
+    assert "Rosario Bennet" in markdown
     assert "2026-03-21 09:30 UTC" in markdown
 
 
@@ -81,10 +81,11 @@ def test_activity_lines_carry_actor_action_target_and_time(
         ts=datetime(2026, 3, 21, 11, 30, tzinfo=UTC),
     )
 
-    markdown = compose_board_markdown([], [event])
+    markdown = compose_board_markdown([], [event], names={"U_REQUESTER": "Dana Lee"})
 
-    assert "<@U_REQUESTER>" in markdown
+    assert "Dana Lee" in markdown
     assert "connected" in markdown
+    # No offer for that id is in the list, so the target renders verbatim.
     assert "offer:abc-123" in markdown
     assert "2026-03-21 11:30 UTC" in markdown
 
@@ -183,3 +184,106 @@ def test_output_ends_with_single_trailing_newline(
 
     assert markdown.endswith("\n")
     assert not markdown.endswith("\n\n")
+
+
+# --- Display-name resolution on case rows (task 019) -------------------------
+
+
+def test_case_row_renders_display_name_when_resolved(
+    make_offer: Callable[..., Offer],
+) -> None:
+    """When a name is known for the offerer, the row shows it (not the raw id)."""
+    offer = make_offer(offerer="U_ROSARIO", resource_type="camp beds")
+
+    markdown = compose_board_markdown([offer], [], names={"U_ROSARIO": "Rosario Bennet"})
+
+    assert "Rosario Bennet" in markdown
+    # The raw mention syntax (which the canvas does not resolve) is gone.
+    assert "<@U_ROSARIO>" not in markdown
+    assert "U_ROSARIO" not in markdown
+
+
+def test_case_row_falls_back_to_bare_id_when_name_unknown(
+    make_offer: Callable[..., Offer],
+) -> None:
+    """An unresolved offerer renders the bare id — never a crash, never empty."""
+    offer = make_offer(offerer="U_UNKNOWN", resource_type="generator")
+
+    markdown = compose_board_markdown([offer], [], names={})
+
+    assert "U_UNKNOWN" in markdown
+
+
+def test_names_param_is_optional_and_defaults_to_bare_ids(
+    make_offer: Callable[..., Offer],
+) -> None:
+    """With no names dict the composer stays pure and shows bare ids."""
+    offer = make_offer(offerer="U_NONAME")
+
+    markdown = compose_board_markdown([offer], [])
+
+    assert "U_NONAME" in markdown
+
+
+# --- Audit-target humanization on activity lines (task 019) ------------------
+
+
+def test_activity_line_humanizes_offer_target_to_resource(
+    make_offer: Callable[..., Offer],
+    make_event: Callable[..., AuditEvent],
+) -> None:
+    """An offer:<uuid> target resolves to the offer's resource_type via the offers list."""
+    offer = make_offer(resource_type="camp beds")
+    event = make_event(action="connect", target=f"offer:{offer.id}")
+
+    markdown = compose_board_markdown([offer], [event])
+
+    assert "camp beds" in markdown
+    # The internal uuid is no longer surfaced raw in the activity log.
+    assert str(offer.id) not in markdown
+
+
+def test_activity_line_falls_back_to_bare_target_when_offer_absent(
+    make_event: Callable[..., AuditEvent],
+) -> None:
+    """An offer:<uuid> target whose offer is not in the list renders verbatim."""
+    event = make_event(action="connect", target="offer:not-in-index")
+
+    markdown = compose_board_markdown([], [event])
+
+    assert "offer:not-in-index" in markdown
+
+
+def test_activity_line_resolves_offerer_target_to_name(
+    make_event: Callable[..., AuditEvent],
+) -> None:
+    """An offerer:<id> target resolves to the offerer's name via the names dict."""
+    event = make_event(action="connect", target="offerer:U_ROSARIO")
+
+    markdown = compose_board_markdown([], [event], names={"U_ROSARIO": "Rosario Bennet"})
+
+    assert "Rosario Bennet" in markdown
+    assert "U_ROSARIO" not in markdown
+
+
+def test_activity_line_offerer_target_falls_back_to_bare_id(
+    make_event: Callable[..., AuditEvent],
+) -> None:
+    """An offerer:<id> target with no resolved name shows the bare id."""
+    event = make_event(action="connect", target="offerer:U_UNKNOWN")
+
+    markdown = compose_board_markdown([], [event], names={})
+
+    assert "U_UNKNOWN" in markdown
+
+
+def test_activity_line_actor_renders_display_name(
+    make_event: Callable[..., AuditEvent],
+) -> None:
+    """The acting human renders by display name when resolved (not the raw id)."""
+    event = make_event(actor_id="U_ACTOR", action="connect", target="offer:x")
+
+    markdown = compose_board_markdown([], [event], names={"U_ACTOR": "Dana Lee"})
+
+    assert "Dana Lee" in markdown
+    assert "<@U_ACTOR>" not in markdown
