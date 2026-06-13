@@ -554,3 +554,55 @@ def test_announce_failure_does_not_break_publish(
     canvas_id = fresh_board.publish(client, USER_TOKEN)
 
     assert canvas_id == "F_NEW"
+
+
+# --- Persistent channel bookmark quick link (task 023) ----------------------
+
+
+def test_create_upserts_board_bookmark_with_deep_link(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """Creating a canvas upserts the channel bookmark pointing at the canvas deep link."""
+    client = _client(mocker, canvas_id="F_NEW")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    upsert = mocker.patch("coordinator.canvas.upsert_board_bookmark")
+
+    fresh_board.publish(client, USER_TOKEN, team_id="T_TEAM")
+
+    upsert.assert_called_once_with(
+        client, link="https://slack.com/docs/T_TEAM/F_NEW", user_token=USER_TOKEN
+    )
+
+
+def test_edit_does_not_upsert_bookmark(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """A board edit (not a create) never re-touches the bookmark — only create does."""
+    client = _client(mocker, canvas_id="F_BOARD")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    upsert = mocker.patch("coordinator.canvas.upsert_board_bookmark")
+    fresh_board.publish(client, USER_TOKEN)  # create -> upserts
+
+    upsert.reset_mock()
+    fresh_board.publish(client, USER_TOKEN)  # edit -> must not upsert
+
+    upsert.assert_not_called()
+
+
+def test_bookmark_failure_does_not_break_publish(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """A bookmark error never breaks the create — best-effort, returns the id."""
+    client = _client(mocker, canvas_id="F_NEW")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    mocker.patch("coordinator.canvas.upsert_board_bookmark", side_effect=RuntimeError("boom"))
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_NEW"

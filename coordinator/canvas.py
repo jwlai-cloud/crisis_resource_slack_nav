@@ -47,8 +47,9 @@ import threading
 from slack_sdk import WebClient
 
 from coordinator import canvas_store
-from coordinator.announce import announce_board
+from coordinator.announce import announce_board, canvas_link
 from coordinator.board import BOARD_TITLE, compose_board_markdown
+from coordinator.bookmark import upsert_board_bookmark
 from coordinator.names import resolve_display_names
 from coordinator.situation import SituationSnapshot, read_situation
 from entities import Offer
@@ -244,10 +245,11 @@ class CoordinatorBoard:
         crashing the handler.
 
         On a successful create the id is persisted to the shared store (so the
-        other process reattaches instead of minting a duplicate) and the board
-        link is announced once to the coordinator channel. Both are best-effort
-        and isolated: a persist or announce failure is logged inside its own
-        helper and never undoes the create.
+        other process reattaches instead of minting a duplicate), the board link
+        is announced once to the coordinator channel, and a persistent channel
+        bookmark to the board is added/updated. All three are best-effort and
+        isolated: a persist, announce, or bookmark failure is logged inside its
+        own helper and never undoes the create.
         """
         response = client.canvases_create(
             title=BOARD_TITLE,
@@ -263,6 +265,18 @@ class CoordinatorBoard:
             # announce_board is already best-effort, but never let an unexpected
             # error here undo a successful create.
             logger.warning("Coordinator board announce raised unexpectedly: %s", exc)
+        try:
+            # The persistent quick link: a single top-of-channel bookmark to the
+            # board, added once on create / updated in place on recreate. Shares
+            # the announce's link form and the same best-effort posture — a
+            # bookmark failure never undoes the create (task 023).
+            upsert_board_bookmark(
+                client,
+                link=canvas_link(canvas_id=canvas_id, team_id=team_id),
+                user_token=user_token,
+            )
+        except Exception as exc:
+            logger.warning("Coordinator board bookmark raised unexpectedly: %s", exc)
         return canvas_id
 
     def _replace(self, client: WebClient, user_token: str, canvas_id: str, markdown: str) -> None:

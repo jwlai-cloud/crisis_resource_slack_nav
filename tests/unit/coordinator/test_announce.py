@@ -103,3 +103,20 @@ def test_announce_forwards_user_token(mocker: MockerFixture) -> None:
     announce.announce_board(client, canvas_id="F_BOARD", team_id="T_TEAM", user_token="xoxp-u")
 
     assert client.chat_postMessage.call_args.kwargs["token"] == "xoxp-u"
+
+
+def test_announce_suppresses_unfurl(mocker: MockerFixture) -> None:
+    """The announce passes unfurl_links/unfurl_media False — no generic login-card preview.
+
+    The slack.com/docs canvas URL unfurled into a generic "Slack Login" card
+    (the unfurl crawler is unauthenticated). Suppressing both unfurls stops that
+    card rendering regardless of the link form (task 023).
+    """
+    mocker.patch.dict("os.environ", {announce.COORDINATOR_CHANNEL_ENV: "C_COORD"})
+    client = mocker.Mock()
+
+    announce.announce_board(client, canvas_id="F_BOARD", team_id="T_TEAM")
+
+    kwargs = client.chat_postMessage.call_args.kwargs
+    assert kwargs["unfurl_links"] is False
+    assert kwargs["unfurl_media"] is False

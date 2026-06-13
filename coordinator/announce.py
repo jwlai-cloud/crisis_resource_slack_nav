@@ -91,7 +91,17 @@ def announce_board(
 
     try:
         kwargs = {"token": user_token} if user_token else {}
-        client.chat_postMessage(channel=channel, text=text, **kwargs)
+        # Suppress both unfurls: the slack.com/docs canvas URL otherwise renders a
+        # generic "Slack Login" card (the unfurl crawler is unauthenticated and
+        # cannot see the canvas). The deep link still opens for a member who clicks
+        # it; we just stop the ugly preview (task 023).
+        client.chat_postMessage(
+            channel=channel,
+            text=text,
+            unfurl_links=False,
+            unfurl_media=False,
+            **kwargs,
+        )
         logger.info("Announced coordinator board canvas %s to %s", canvas_id, channel)
     except Exception as exc:
         logger.warning("Coordinator board announce failed (board unaffected): %s", exc)

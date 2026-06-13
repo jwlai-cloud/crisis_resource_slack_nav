@@ -36,6 +36,7 @@ def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
         canvas_store, "_id_path", return_value=tmp_path / ".slack" / "board_canvas_id"
     )
     mocker.patch("coordinator.canvas.announce_board")
+    mocker.patch("coordinator.canvas.upsert_board_bookmark")
 
 
 @pytest.fixture

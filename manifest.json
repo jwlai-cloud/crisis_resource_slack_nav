@@ -41,6 +41,7 @@
         "chat:write",
         "canvases:read",
         "canvases:write",
+        "bookmarks:write",
         "users:read.email"
       ],
       "bot": [
@@ -55,7 +56,8 @@
         "reactions:write",
         "reactions:read",
         "users:read",
-        "assistant:write"
+        "assistant:write",
+        "bookmarks:write"
       ]
     }
   },
