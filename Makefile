@@ -43,8 +43,8 @@ ci: install format-check lint-check test ## Full pre-PR fan
 run: ## Run the agent against the sandbox (verify after W1 scaffold)
 	slack run
 
-board: ## (Re)create the coordinator board canvas on demand (needs SLACK_USER_TOKEN)
-	uv run python -m scripts.open_board
+board: ## Open the coordinator board (reuse). `make board ARGS=--fresh` to delete + recreate.
+	uv run python -m scripts.open_board $(ARGS)
 
 seed-demo: ## Seed the Exmouth scenario into CRISIS_CHANNEL (idempotent; ARGS=--fresh to wipe + re-seed)
 	uv run python -m scripts.seed_demo $(ARGS)
