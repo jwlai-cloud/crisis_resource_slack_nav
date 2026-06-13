@@ -76,12 +76,12 @@ def main() -> int:
         token=os.environ.get("SLACK_BOT_TOKEN"),
     )
 
-    team_id = _resolve_team_id(client, user_token)
+    team_id, team_url = _resolve_team(client, user_token)
 
     if args.fresh:
-        canvas_id = coordinator_board.recreate(client, user_token, team_id)
+        canvas_id = coordinator_board.recreate(client, user_token, team_id, team_url)
     else:
-        canvas_id = coordinator_board.publish(client, user_token, team_id)
+        canvas_id = coordinator_board.publish(client, user_token, team_id, team_url)
     if canvas_id is None:
         logger.error("Could not create the coordinator board canvas — see the warning above.")
         return 1
@@ -91,20 +91,23 @@ def main() -> int:
     return 0
 
 
-def _resolve_team_id(client: WebClient, user_token: str) -> str | None:
-    """Best-effort team id for the announce deep link; ``None`` if it can't be read.
+def _resolve_team(client: WebClient, user_token: str) -> tuple[str | None, str | None]:
+    """Best-effort (team id, workspace url) for the board link; ``(None, None)`` on failure.
 
     The script has no Bolt context and no bot token (``slack run`` injects that into
     the agent, not here), so it asks Slack via ``auth.test`` authenticated with the
-    same user token that mints the canvas. A failure (token issue, API down) just
-    means the announce posts the bare canvas id instead of a deep link — never a
-    reason to abort the board create.
+    same user token that mints the canvas. The ``url`` field is the workspace domain
+    (e.g. ``https://acme.enterprise.slack.com/``); paired with the team id it builds
+    the in-app canvas link (opens the canvas inside Slack rather than a browser tab).
+    A failure (token issue, API down) just means the link falls back to the
+    slack.com form / bare id — never a reason to abort the board open.
     """
     try:
-        return str(client.auth_test(token=user_token)["team_id"])
+        resp = client.auth_test(token=user_token)
+        return str(resp["team_id"]), (resp.get("url") or None)
     except Exception as exc:
-        logger.info("Could not resolve team id for the board link (will post bare id): %s", exc)
-        return None
+        logger.info("Could not resolve team for the board link (will use fallback): %s", exc)
+        return None, None
 
 
 if __name__ == "__main__":

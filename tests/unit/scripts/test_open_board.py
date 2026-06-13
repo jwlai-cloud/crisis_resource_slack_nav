@@ -42,14 +42,14 @@ def test_default_reuses_board_via_publish(mocker: MockerFixture) -> None:
     mocker.patch("scripts.open_board.load_dotenv")
     mocker.patch("scripts.open_board.resolve_user_token", return_value="xoxp-coordinator")
     client = mocker.patch("scripts.open_board.WebClient").return_value
-    client.auth_test.return_value = {"team_id": "T_TEAM"}
+    client.auth_test.return_value = {"team_id": "T_TEAM", "url": "https://acme.slack.com/"}
     publish = mocker.patch("scripts.open_board.coordinator_board.publish", return_value="F_X")
     recreate = mocker.patch("scripts.open_board.coordinator_board.recreate")
 
     rc = open_board.main()
 
     assert rc == 0
-    publish.assert_called_once_with(client, "xoxp-coordinator", "T_TEAM")
+    publish.assert_called_once_with(client, "xoxp-coordinator", "T_TEAM", "https://acme.slack.com/")
     recreate.assert_not_called()
 
 
@@ -59,14 +59,16 @@ def test_fresh_flag_recreates(mocker: MockerFixture) -> None:
     mocker.patch("scripts.open_board.load_dotenv")
     mocker.patch("scripts.open_board.resolve_user_token", return_value="xoxp-coordinator")
     client = mocker.patch("scripts.open_board.WebClient").return_value
-    client.auth_test.return_value = {"team_id": "T_TEAM"}
+    client.auth_test.return_value = {"team_id": "T_TEAM", "url": "https://acme.slack.com/"}
     recreate = mocker.patch("scripts.open_board.coordinator_board.recreate", return_value="F_X")
     publish = mocker.patch("scripts.open_board.coordinator_board.publish")
 
     rc = open_board.main()
 
     assert rc == 0
-    recreate.assert_called_once_with(client, "xoxp-coordinator", "T_TEAM")
+    recreate.assert_called_once_with(
+        client, "xoxp-coordinator", "T_TEAM", "https://acme.slack.com/"
+    )
     publish.assert_not_called()
 
 
@@ -76,7 +78,7 @@ def test_failed_open_exits_nonzero(mocker: MockerFixture) -> None:
     mocker.patch("scripts.open_board.load_dotenv")
     mocker.patch("scripts.open_board.resolve_user_token", return_value="xoxp-user")
     client = mocker.patch("scripts.open_board.WebClient").return_value
-    client.auth_test.return_value = {"team_id": "T_TEAM"}
+    client.auth_test.return_value = {"team_id": "T_TEAM", "url": "https://acme.slack.com/"}
     mocker.patch("scripts.open_board.coordinator_board.publish", return_value=None)
 
     rc = open_board.main()
@@ -96,4 +98,4 @@ def test_team_id_failure_degrades_to_none_without_aborting(mocker: MockerFixture
     rc = open_board.main()
 
     assert rc == 0
-    publish.assert_called_once_with(client, "xoxp-coordinator", None)
+    publish.assert_called_once_with(client, "xoxp-coordinator", None, None)

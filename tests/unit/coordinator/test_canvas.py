@@ -382,7 +382,7 @@ def test_update_board_helper_delegates_to_singleton_publish(
 
     # update_board threads team_id (None when omitted) through to publish so a
     # first refresh that has to create the canvas can build a deep-link announce.
-    publish.assert_called_once_with(client, USER_TOKEN, None)
+    publish.assert_called_once_with(client, USER_TOKEN, None, None)
 
 
 def test_update_board_helper_forwards_team_id(
@@ -394,7 +394,7 @@ def test_update_board_helper_forwards_team_id(
 
     update_board(client, USER_TOKEN, "T_TEAM")
 
-    publish.assert_called_once_with(client, USER_TOKEN, "T_TEAM")
+    publish.assert_called_once_with(client, USER_TOKEN, "T_TEAM", None)
 
 
 def test_update_board_helper_swallows_publish_failure(
@@ -510,7 +510,7 @@ def test_create_announces_board_link_once(
     fresh_board.publish(client, USER_TOKEN, team_id="T_TEAM")
 
     announce.assert_called_once_with(
-        client, canvas_id="F_NEW", team_id="T_TEAM", user_token=USER_TOKEN
+        client, canvas_id="F_NEW", team_id="T_TEAM", team_url=None, user_token=USER_TOKEN
     )
 
 

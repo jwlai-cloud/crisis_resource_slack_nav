@@ -120,3 +120,17 @@ def test_announce_suppresses_unfurl(mocker: MockerFixture) -> None:
     kwargs = client.chat_postMessage.call_args.kwargs
     assert kwargs["unfurl_links"] is False
     assert kwargs["unfurl_media"] is False
+
+
+def test_canvas_link_prefers_workspace_domain_for_in_app_open() -> None:
+    """With team_url the link uses the workspace domain (opens in-app, not a browser)."""
+    link = announce.canvas_link(
+        canvas_id="F_BOARD", team_id="E_ORG", team_url="https://acme.enterprise.slack.com/"
+    )
+    assert link == "https://acme.enterprise.slack.com/docs/E_ORG/F_BOARD"
+
+
+def test_canvas_link_falls_back_to_slack_com_without_team_url() -> None:
+    """Without team_url it falls back to the generic slack.com docs form."""
+    link = announce.canvas_link(canvas_id="F_BOARD", team_id="E_ORG")
+    assert link == "https://slack.com/docs/E_ORG/F_BOARD"

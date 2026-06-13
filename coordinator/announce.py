@@ -41,21 +41,32 @@ def coordinator_channel_id() -> str | None:
     return raw or None
 
 
-def canvas_link(*, canvas_id: str, team_id: str | None) -> str | None:
-    """Construct the standalone-canvas docs URL, or ``None`` when no team id is known.
+def canvas_link(*, canvas_id: str, team_id: str | None, team_url: str | None = None) -> str | None:
+    """Construct the canvas docs URL, or ``None`` when no team id is known.
 
-    Slack renders a standalone canvas at ``https://slack.com/docs/{team}/{canvas}``;
-    that needs the team id, which the agent has on the Bolt context but the
-    one-shot script may not. Without it we return ``None`` and the caller falls
-    back to posting the bare canvas id (still discoverable, just not a deep link).
+    Prefers the **workspace-domain** URL ``{team_url}docs/{team}/{canvas}`` (e.g.
+    ``https://acme.enterprise.slack.com/docs/...``) when ``team_url`` is known: the
+    Slack desktop/web client recognises its own workspace domain and opens the
+    canvas **in-app**, whereas the generic ``https://slack.com/docs/...`` form
+    bounces out to an external browser tab. ``team_url`` comes from ``auth.test``'s
+    ``url`` field (resolved in the ``make board`` script). Falls back to the
+    slack.com form when only ``team_id`` is known, and to ``None`` (no deep link)
+    when even that is missing.
     """
     if not team_id:
         return None
+    if team_url:
+        return f"{team_url.rstrip('/')}/docs/{team_id}/{canvas_id}"
     return f"https://slack.com/docs/{team_id}/{canvas_id}"
 
 
 def announce_board(
-    client: WebClient, *, canvas_id: str, team_id: str | None, user_token: str | None = None
+    client: WebClient,
+    *,
+    canvas_id: str,
+    team_id: str | None,
+    team_url: str | None = None,
+    user_token: str | None = None,
 ) -> None:
     """Post the board link once to ``COORDINATOR_CHANNEL``; a no-op when it is off.
 
@@ -75,7 +86,7 @@ def announce_board(
         logger.info("Coordinator board announce skipped: %s not set", COORDINATOR_CHANNEL_ENV)
         return
 
-    link = canvas_link(canvas_id=canvas_id, team_id=team_id)
+    link = canvas_link(canvas_id=canvas_id, team_id=team_id, team_url=team_url)
     if link is not None:
         text = (
             ":pushpin: The Community Cases board is open — "

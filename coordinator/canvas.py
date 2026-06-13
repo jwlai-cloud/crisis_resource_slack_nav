@@ -152,7 +152,11 @@ class CoordinatorBoard:
             return self._canvas_id
 
     def publish(
-        self, client: WebClient, user_token: str | None, team_id: str | None = None
+        self,
+        client: WebClient,
+        user_token: str | None,
+        team_id: str | None = None,
+        team_url: str | None = None,
     ) -> str | None:
         """Render the current board state and write it to the Canvas; return its id.
 
@@ -186,7 +190,7 @@ class CoordinatorBoard:
                     # before deciding to mint a fresh one.
                     canvas_id = canvas_store.load_canvas_id()
                 if canvas_id is None:
-                    canvas_id = self._create(client, user_token, markdown, team_id)
+                    canvas_id = self._create(client, user_token, markdown, team_id, team_url)
                     self._canvas_id = canvas_id
                 else:
                     self._replace(client, user_token, canvas_id, markdown)
@@ -197,7 +201,11 @@ class CoordinatorBoard:
             return None
 
     def recreate(
-        self, client: WebClient, user_token: str | None, team_id: str | None = None
+        self,
+        client: WebClient,
+        user_token: str | None,
+        team_id: str | None = None,
+        team_url: str | None = None,
     ) -> str | None:
         """Force-create a fresh board, dropping any stored id; return the new id.
 
@@ -217,10 +225,14 @@ class CoordinatorBoard:
                 logger.info("Deleted prior coordinator board canvas %s", old_id)
             except Exception as exc:
                 logger.warning("Could not delete prior board canvas %s: %s", old_id, exc)
-        return self._publish_fresh(client, user_token, team_id)
+        return self._publish_fresh(client, user_token, team_id, team_url)
 
     def _publish_fresh(
-        self, client: WebClient, user_token: str | None, team_id: str | None
+        self,
+        client: WebClient,
+        user_token: str | None,
+        team_id: str | None,
+        team_url: str | None = None,
     ) -> str | None:
         """Like :meth:`publish` but always creates — bypasses the persisted-id reattach.
 
@@ -233,7 +245,7 @@ class CoordinatorBoard:
         try:
             markdown = _compose_with_names(client, user_token)
             with self._lock:
-                canvas_id = self._create(client, user_token, markdown, team_id)
+                canvas_id = self._create(client, user_token, markdown, team_id, team_url)
                 self._canvas_id = canvas_id
             return canvas_id
         except Exception as exc:
@@ -241,7 +253,12 @@ class CoordinatorBoard:
             return None
 
     def _create(
-        self, client: WebClient, user_token: str, markdown: str, team_id: str | None
+        self,
+        client: WebClient,
+        user_token: str,
+        markdown: str,
+        team_id: str | None,
+        team_url: str | None = None,
     ) -> str:
         """Create the standalone canvas with the board markdown; return its id.
 
@@ -266,7 +283,13 @@ class CoordinatorBoard:
         logger.info("Created coordinator board canvas %s", canvas_id)
         canvas_store.save_canvas_id(canvas_id)
         try:
-            announce_board(client, canvas_id=canvas_id, team_id=team_id, user_token=user_token)
+            announce_board(
+                client,
+                canvas_id=canvas_id,
+                team_id=team_id,
+                team_url=team_url,
+                user_token=user_token,
+            )
         except Exception as exc:
             # announce_board is already best-effort, but never let an unexpected
             # error here undo a successful create.
@@ -278,7 +301,7 @@ class CoordinatorBoard:
             # bookmark failure never undoes the create (task 023).
             upsert_board_bookmark(
                 client,
-                link=canvas_link(canvas_id=canvas_id, team_id=team_id),
+                link=canvas_link(canvas_id=canvas_id, team_id=team_id, team_url=team_url),
                 user_token=user_token,
             )
         except Exception as exc:
@@ -305,7 +328,12 @@ class CoordinatorBoard:
 coordinator_board = CoordinatorBoard()
 
 
-def update_board(client: WebClient, user_token: str | None, team_id: str | None = None) -> None:
+def update_board(
+    client: WebClient,
+    user_token: str | None,
+    team_id: str | None = None,
+    team_url: str | None = None,
+) -> None:
     """Best-effort board refresh, safe to call from a button handler.
 
     A thin no-return wrapper over :meth:`CoordinatorBoard.publish` for the handler
@@ -316,4 +344,4 @@ def update_board(client: WebClient, user_token: str | None, team_id: str | None 
     build a deep-link announcement; it is optional. The handler calls this *after*
     its own work has completed.
     """
-    coordinator_board.publish(client, user_token, team_id)
+    coordinator_board.publish(client, user_token, team_id, team_url)
