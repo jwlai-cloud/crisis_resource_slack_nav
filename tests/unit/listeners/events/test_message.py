@@ -244,15 +244,82 @@ def test_dm_path_unchanged_composes_even_without_recall(
     assert compose_kwargs["mention_requester"] is False  # DM omits the mention
 
 
-def test_bot_message_in_designated_channel_ignored(
+def test_agents_own_message_in_designated_channel_ignored(
     mocker: MockerFixture, patched_flow: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bot's own (bot_id) messages in the channel never route — existing guard."""
+    """The agent's OWN messages (user == bot_user_id) never route — no self-loop (task 031).
+
+    The agent's acks/replies post as the bot and carry its own user id. The handler
+    must skip them so an indexed offer's ack is never re-parsed/re-indexed/re-acked.
+    """
     monkeypatch.setenv("CRISIS_CHANNEL", CRISIS_CHANNEL)
-    event = _channel_event()
+    # The agent's own post: authored by the bot's user id, with a bot_id set.
+    event = _channel_event(text="Logged your offer")
+    event["user"] = "B1"  # context.bot_user_id is "B1"
     event["bot_id"] = "B1"
 
     _invoke(mocker, channel_id=CRISIS_CHANNEL, event=event)
+
+    patched_flow["route"].assert_not_called()
+    patched_flow["compose"].assert_not_called()
+
+
+def test_operator_api_post_in_designated_channel_routed(
+    mocker: MockerFixture, patched_flow: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator/integration API post (real user + a bot_id) is routed, not skipped (task 031).
+
+    A seeded/operator offer posted via the app's WebClient arrives with a real
+    ``user`` (the operator) AND a ``bot_id`` (the posting app). The old blanket
+    ``bot_id`` skip dropped it before parsing; now only the agent's OWN posts
+    (``user == bot_user_id``) are skipped, so this is parsed/indexed/acked.
+    """
+    monkeypatch.setenv("CRISIS_CHANNEL", CRISIS_CHANNEL)
+    patched_flow["route"].return_value = None  # offer acked by route_message
+    event = _channel_event(text="Offering: a 2kW petrol generator")
+    event["user"] = "U_OPERATOR"  # a real operator, NOT the bot's user id ("B1")
+    event["bot_id"] = "B_APP"  # posted via the app's WebClient
+
+    _invoke(mocker, channel_id=CRISIS_CHANNEL, event=event)
+
+    # Not skipped by the self-guard: the offer reaches route_message to be parsed +
+    # indexed + acked (route returns None, so no need reply is composed).
+    patched_flow["route"].assert_called_once()
+    patched_flow["compose"].assert_not_called()
+    # The offer text reaches route_message (passed positionally as the first arg).
+    assert patched_flow["route"].call_args.args[0] == "Offering: a 2kW petrol generator"
+
+
+def test_bot_user_id_none_falls_back_to_bot_id_skip(
+    mocker: MockerFixture, patched_flow: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defensive fallback (task 031): bot_user_id unknown -> skip any bot_id message.
+
+    In socket mode ``context.bot_user_id`` is always set; if it is somehow ``None``
+    we cannot identify our own posts by user id, so we fall back to the old
+    ``bot_id`` skip rather than risk treating our own posts as user input.
+    """
+    monkeypatch.setenv("CRISIS_CHANNEL", CRISIS_CHANNEL)
+    context = _context(mocker, CRISIS_CHANNEL)
+    context.bot_user_id = None
+    event = _channel_event(text="Offering: a generator")
+    event["user"] = "U_OPERATOR"
+    event["bot_id"] = "B_APP"
+
+    client = mocker.Mock()
+    logger = mocker.Mock()
+    say = mocker.Mock()
+    say_stream = mocker.Mock()
+    set_status = mocker.Mock()
+    message.handle_message(
+        client=client,
+        context=context,
+        event=event,
+        logger=logger,
+        say=say,
+        say_stream=say_stream,
+        set_status=set_status,
+    )
 
     patched_flow["route"].assert_not_called()
     patched_flow["compose"].assert_not_called()

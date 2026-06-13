@@ -30,7 +30,7 @@ def handle_message(
 ):
     """Handle DMs, engaged threads, and passive listening in the designated channel.
 
-    Routing (after the bot/self/subtype guards):
+    Routing (after the self/subtype guards):
 
     * **DM** -> always replied (one party, every message gets an answer).
     * **Engaged thread reply** -> replied only if the bot is already in that thread.
@@ -40,11 +40,37 @@ def handle_message(
       where ``route_message`` returns ``None``) is silently ignored — it never reaches
       the LLM reply. This differs from DMs, which reply unconditionally.
     * **Any other top-level channel message** -> skipped (handled by app_mentioned).
+
+    Self-guard (task 031): we skip *our own* messages by identity, not the mere
+    presence of a ``bot_id``. A seeded/operator/integration offer posted through the
+    app's WebClient carries a real ``user`` AND a ``bot_id``; the old blanket
+    ``if event.get("bot_id"): return`` dropped it before parsing, so organic offers
+    never reached the index or the board. We now skip only when
+    ``event["user"] == context.bot_user_id`` (the agent's acks/replies all carry the
+    bot's own user id) — guaranteeing no index->ack->re-process self-loop while
+    letting operator/integration posts in. Consistent with
+    ``recall.client._drop_agent_noise``, which already filters the agent's own posts
+    out of RTS results by ``bot_user_id``.
+
+    Trade-off: this also lets posts from *other* bots/integrations in the channel be
+    parsed; ``parse_message`` classifies them and chatter is silently dropped (one
+    parse, no output). In the crisis channel that is rare and acceptable; if a
+    concrete noisy bot appears, narrow then (its own fork — ADR-0004). When
+    ``context.bot_user_id`` is unknown (shouldn't happen in socket mode), we fall back
+    to the old ``bot_id`` skip so we never treat our own posts as user input.
     """
-    # Skip message subtypes (edits, deletes, etc.) and bot messages.
+    # Skip message subtypes (edits, deletes, joins, message_changed, etc.).
     if event.get("subtype"):
         return
-    if event.get("bot_id"):
+    # Skip our OWN messages, not any bot: the agent's acks/replies post as the bot
+    # and carry its user id. Operator/integration API posts have a real user (+ a
+    # bot_id) and are processed. Fall back to the old bot_id skip only when we can't
+    # identify ourselves by user id.
+    bot_user_id = context.bot_user_id
+    if bot_user_id:
+        if event.get("user") == bot_user_id:
+            return
+    elif event.get("bot_id"):
         return
 
     is_dm = event.get("channel_type") == "im"
