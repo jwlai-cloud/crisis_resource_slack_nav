@@ -8,14 +8,34 @@ test tree — pythonpath collection), mirroring the matching test conftest.
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 
 from entities import Offer, Status, deterministic_id
 from matching.audit import AuditEvent
 
 OFFER_TS = datetime(2026, 3, 21, 9, 30, tzinfo=UTC)
 EVENT_TS = datetime(2026, 3, 21, 11, 30, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Keep the canvas tests off the real filesystem and Slack by default.
+
+    Every canvas test would otherwise read/write the real ``.slack/board_canvas_id``
+    and try to post to a coordinator channel via :func:`coordinator.canvas.publish`.
+    Point the id store at ``tmp_path`` and stub the announce so a test only sees
+    those side effects when it opts in (re-patches them itself). Tests that assert
+    the persistence/announce contract re-patch over these to inspect the calls.
+    """
+    from coordinator import canvas_store
+
+    mocker.patch.object(
+        canvas_store, "_id_path", return_value=tmp_path / ".slack" / "board_canvas_id"
+    )
+    mocker.patch("coordinator.canvas.announce_board")
 
 
 @pytest.fixture

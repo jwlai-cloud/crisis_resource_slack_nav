@@ -44,6 +44,8 @@ import threading
 
 from slack_sdk import WebClient
 
+from coordinator import canvas_store
+from coordinator.announce import announce_board
 from coordinator.board import BOARD_TITLE, compose_board_markdown
 from matching.audit import audit_trail
 from matching.index import offer_index
@@ -86,15 +88,28 @@ class CoordinatorBoard:
         with self._lock:
             return self._canvas_id
 
-    def publish(self, client: WebClient, user_token: str | None) -> str | None:
+    def publish(
+        self, client: WebClient, user_token: str | None, team_id: str | None = None
+    ) -> str | None:
         """Render the current board state and write it to the Canvas; return its id.
 
         Composes the board from the live singletons (offer index + audit trail),
         then either creates the canvas (first call) or replaces its whole document
-        (later calls), authenticating as the user via ``user_token``. Best-effort:
-        a missing token, or any API / client failure, is logged and swallowed —
-        this returns ``None`` and never raises, so a caller hooked into a button
-        handler is never broken by a Canvas problem.
+        (later calls), authenticating as the user via ``user_token``.
+
+        **Cross-process reattach (task 018).** Before minting a new canvas, the
+        first publish loads the id persisted by the other process
+        (:func:`coordinator.canvas_store.load_canvas_id`) — so the ``make board``
+        script and the live agent operate on the *same* canvas. Only when no
+        persisted id exists does it create one, then persist it (so the other
+        process reattaches) and announce its link once (:func:`announce_board`).
+
+        Best-effort: a missing token, or any API / client / file failure, is
+        logged and swallowed — this returns ``None`` and never raises, so a caller
+        hooked into a button handler is never broken by a Canvas problem.
+
+        ``team_id`` is used only to build a deep link in the create announcement;
+        it is optional and the publish works without it.
         """
         if not user_token:
             logger.info("Coordinator board update skipped: no user token (canvases:write needed)")
@@ -104,42 +119,89 @@ class CoordinatorBoard:
             with self._lock:
                 canvas_id = self._canvas_id
                 if canvas_id is None:
-                    canvas_id = self._create(client, user_token, markdown)
+                    # Reattach to the canvas the other process persisted, if any,
+                    # before deciding to mint a fresh one.
+                    canvas_id = canvas_store.load_canvas_id()
+                if canvas_id is None:
+                    canvas_id = self._create(client, user_token, markdown, team_id)
                     self._canvas_id = canvas_id
                 else:
                     self._replace(client, user_token, canvas_id, markdown)
+                    self._canvas_id = canvas_id
             return canvas_id
         except Exception as exc:
             logger.warning("Coordinator board update failed (handler unaffected): %s", exc)
             return None
 
-    def recreate(self, client: WebClient, user_token: str | None) -> str | None:
+    def recreate(
+        self, client: WebClient, user_token: str | None, team_id: str | None = None
+    ) -> str | None:
         """Force-create a fresh board, dropping any stored id; return the new id.
 
         The on-demand entry point for the demo: a coordinator can always summon a
-        clean board even if a prior one exists, without hunting for an old id.
-        Best-effort like :meth:`publish`.
+        clean board even if a prior one exists, without hunting for an old id. The
+        in-process id is cleared *and* the persisted id is ignored — the create
+        path mints a brand-new canvas, persists it, and announces it. Best-effort
+        like :meth:`publish`.
         """
         with self._lock:
             self._canvas_id = None
-        return self.publish(client, user_token)
+        # Drop the persisted handle too, so recreate always mints fresh rather
+        # than reattaching to a prior canvas via the shared store.
+        return self._publish_fresh(client, user_token, team_id)
 
-    def _create(self, client: WebClient, user_token: str, markdown: str) -> str:
+    def _publish_fresh(
+        self, client: WebClient, user_token: str | None, team_id: str | None
+    ) -> str | None:
+        """Like :meth:`publish` but always creates — bypasses the persisted-id reattach.
+
+        Backs :meth:`recreate`: the demo "summon a clean board" path must not
+        reattach to the old canvas the store points at. Best-effort, never raises.
+        """
+        if not user_token:
+            logger.info("Coordinator board update skipped: no user token (canvases:write needed)")
+            return None
+        try:
+            markdown = compose_board_markdown(offer_index.all_offers(), audit_trail.list_events())
+            with self._lock:
+                canvas_id = self._create(client, user_token, markdown, team_id)
+                self._canvas_id = canvas_id
+            return canvas_id
+        except Exception as exc:
+            logger.warning("Coordinator board recreate failed: %s", exc)
+            return None
+
+    def _create(
+        self, client: WebClient, user_token: str, markdown: str, team_id: str | None
+    ) -> str:
         """Create the standalone canvas with the board markdown; return its id.
 
         Authored as the acting user via the per-call ``Authorization`` override.
         Raises ``KeyError`` if Slack returns no ``canvas_id`` — caught by
         :meth:`publish` and logged, so the board simply stays uncreated rather than
         crashing the handler.
+
+        On a successful create the id is persisted to the shared store (so the
+        other process reattaches instead of minting a duplicate) and the board
+        link is announced once to the coordinator channel. Both are best-effort
+        and isolated: a persist or announce failure is logged inside its own
+        helper and never undoes the create.
         """
         response = client.canvases_create(
             title=BOARD_TITLE,
             document_content=_document_content(markdown),
             headers=_user_auth(user_token),
         )
-        canvas_id = response["canvas_id"]
+        canvas_id = str(response["canvas_id"])
         logger.info("Created coordinator board canvas %s", canvas_id)
-        return str(canvas_id)
+        canvas_store.save_canvas_id(canvas_id)
+        try:
+            announce_board(client, canvas_id=canvas_id, team_id=team_id)
+        except Exception as exc:
+            # announce_board is already best-effort, but never let an unexpected
+            # error here undo a successful create.
+            logger.warning("Coordinator board announce raised unexpectedly: %s", exc)
+        return canvas_id
 
     def _replace(self, client: WebClient, user_token: str, canvas_id: str, markdown: str) -> None:
         """Replace the entire canvas document with the freshly composed board.
@@ -161,13 +223,15 @@ class CoordinatorBoard:
 coordinator_board = CoordinatorBoard()
 
 
-def update_board(client: WebClient, user_token: str | None) -> None:
+def update_board(client: WebClient, user_token: str | None, team_id: str | None = None) -> None:
     """Best-effort board refresh, safe to call from a button handler.
 
     A thin no-return wrapper over :meth:`CoordinatorBoard.publish` for the handler
     hooks: it never raises and ignores the returned id, so a board failure can
     never break Connect / Resolve / Dismiss. ``user_token`` is the user-scope token
-    the canvas write needs (``None`` -> the refresh is skipped, logged). The handler
-    calls this *after* its own work has completed.
+    the canvas write needs (``None`` -> the refresh is skipped, logged). ``team_id``
+    (from the Bolt context) lets a *first* refresh that has to create the canvas
+    build a deep-link announcement; it is optional. The handler calls this *after*
+    its own work has completed.
     """
-    coordinator_board.publish(client, user_token)
+    coordinator_board.publish(client, user_token, team_id)

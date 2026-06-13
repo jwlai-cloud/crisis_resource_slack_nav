@@ -128,7 +128,7 @@ Opinionated agent-team workflow in two modes. Canonical lifecycle and rules live
 | `make pre-commit` | format-check + lint-check + unit tests. |
 | `make ci` | Full pre-PR fan: install → format/lint checks → tests. |
 | `make run` | `slack run` against the sandbox. |
-| `make board` | (Re)create the coordinator board Canvas on demand (`scripts/open_board.py`). Needs `SLACK_USER_TOKEN` (user `canvases:write`). The board then auto-refreshes on every Connect / Resolve / Dismiss within the running agent process (task 017, ADR-0005). |
+| `make board` | (Re)create the coordinator board Canvas on demand (`scripts/open_board.py`) — mints it, **persists its id** to the gitignored `.slack/board_canvas_id`, and **announces** the link once to `COORDINATOR_CHANNEL` (if set). Needs `SLACK_USER_TOKEN` (user `canvases:write`). The running agent's first board refresh reads that same id file and *edits* this canvas (no duplicate); it then auto-refreshes on every Connect / Resolve / Dismiss (task 017/018, ADR-0005). |
 
 > **Manual QA order:** `format-fix → lint-fix → format-check → lint-check → pre-commit → unit-tests`. Fixers before checkers. CI runs the non-fix variants only.
 
@@ -139,6 +139,7 @@ Slack CLI (v4.2.0, installed at `~/.local/bin/slack`):
 - `slack manifest validate` — check `manifest.json` after editing scopes/events.
 - `.env` needs `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) — pydantic-ai picks the model in `agent/agent.py:get_model()`.
 - `CRISIS_CHANNEL` (optional, channel id; empty/unset = off) — enables passive listening (parse every top-level message, ack offers / answer needs) in that one channel only; everywhere else stays mention-gated (ADR-0004).
+- `COORDINATOR_CHANNEL` (optional, channel id; empty/unset = off) — when the coordinator board Canvas is first created, its link is posted once to this channel so a coordinator can open it (task 018, ADR-0005). Announce-on-create only; never re-posted on edits. Same one-channel + restart pattern as `CRISIS_CHANNEL`.
 
 ## Step-by-Step Verification
 

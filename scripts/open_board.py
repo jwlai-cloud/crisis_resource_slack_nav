@@ -10,18 +10,22 @@ Run it (the agent process need not be running — this is a standalone one-shot)
 
     uv run python -m scripts.open_board
 
-It creates a brand-new standalone Canvas owned by the acting user and writes the
-current board into it, printing the canvas id and a tip to open it. Re-running
-makes a fresh canvas (``recreate``), which is what you want for a clean demo. The
-board then auto-updates as buttons are pressed *within the same agent process* —
-note that this one-shot script and the agent are separate processes, so for the
-live demo the coordinator opens the board from the agent process's own trigger
-(see the task log / README); this CLI is the standalone "mint a board now" path and
-a smoke test that the Canvas credentials work.
+It creates a brand-new standalone Canvas owned by the acting user, writes the
+current board into it, **persists the canvas id** to the shared
+``.slack/board_canvas_id`` file, and **announces** the board link once to
+``COORDINATOR_CHANNEL`` (when set). Re-running makes a fresh canvas (``recreate``),
+which is what you want for a clean demo.
+
+The persisted id is the bridge across processes (task 018): the live agent's first
+board refresh reads that same file and *edits* this canvas instead of minting its
+own — so ``make board`` is the single "mint + persist + announce" entry, and the
+running agent reuses it. The board then auto-updates as Connect / Resolve / Dismiss
+buttons are pressed within the agent process.
 
 Requires ``SLACK_USER_TOKEN`` (the user OAuth token with ``canvases:write``) and
 ``SLACK_BOT_TOKEN`` (carries the WebClient; the user token overrides auth per call)
-in ``.env`` or the environment — see ``.env.example``.
+in ``.env`` or the environment — see ``.env.example``. ``COORDINATOR_CHANNEL`` is
+optional (empty/unset = no announce, mirroring ``CRISIS_CHANNEL``).
 """
 
 import logging
@@ -58,14 +62,30 @@ def main() -> int:
         token=os.environ.get("SLACK_BOT_TOKEN"),
     )
 
-    canvas_id = coordinator_board.recreate(client, user_token)
+    team_id = _resolve_team_id(client)
+
+    canvas_id = coordinator_board.recreate(client, user_token, team_id)
     if canvas_id is None:
         logger.error("Could not create the coordinator board canvas — see the warning above.")
         return 1
 
-    logger.info("Coordinator board canvas created: %s", canvas_id)
-    logger.info("Open it from Slack: search your canvases or use the link in the API response.")
+    logger.info("Coordinator board canvas created + persisted: %s", canvas_id)
+    logger.info("Open it from Slack: search your canvases or use the announced link.")
     return 0
+
+
+def _resolve_team_id(client: WebClient) -> str | None:
+    """Best-effort team id for the announce deep link; ``None`` if it can't be read.
+
+    The script has no Bolt context, so it asks Slack via ``auth.test``. A failure
+    (token issue, API down) just means the announce posts the bare canvas id
+    instead of a deep link — never a reason to abort the board create.
+    """
+    try:
+        return str(client.auth_test()["team_id"])
+    except Exception as exc:
+        logger.info("Could not resolve team id for the board link (will post bare id): %s", exc)
+        return None
 
 
 if __name__ == "__main__":

@@ -243,7 +243,7 @@ def handle_crisis_connect(
 
     # Refresh the coordinator board last — best-effort, already isolated inside
     # update_board (never raises), so a Canvas hiccup cannot undo the connection.
-    update_board(client, resolve_user_token(context.user_token))
+    update_board(client, resolve_user_token(context.user_token), context.team_id)
 
 
 def handle_crisis_resolve(
@@ -277,7 +277,7 @@ def handle_crisis_resolve(
         )
 
     # Refresh the coordinator board last — best-effort (update_board never raises).
-    update_board(client, resolve_user_token(context.user_token))
+    update_board(client, resolve_user_token(context.user_token), context.team_id)
 
 
 def handle_crisis_not_relevant(
@@ -311,7 +311,7 @@ def handle_crisis_not_relevant(
 
     # Refresh the coordinator board last — the dismissal is a human-confirmed action
     # the activity log records. Best-effort (update_board never raises).
-    update_board(client, resolve_user_token(context.user_token))
+    update_board(client, resolve_user_token(context.user_token), context.team_id)
 
 
 # Registered action_ids, exported so the package registrar wires the right handler

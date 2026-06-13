@@ -44,9 +44,11 @@ def _patch_singletons(mocker: MockerFixture) -> tuple[OfferIndex, AuditTrail]:
     return index, trail
 
 
-def _context(mocker: MockerFixture, *, user_token: str | None = "xoxp-user") -> object:
-    """A BoltContext-like stub carrying the user token the board hook reads."""
-    return mocker.Mock(user_token=user_token)
+def _context(
+    mocker: MockerFixture, *, user_token: str | None = "xoxp-user", team_id: str | None = "T_TEAM"
+) -> object:
+    """A BoltContext-like stub carrying the user token + team id the board hook reads."""
+    return mocker.Mock(user_token=user_token, team_id=team_id)
 
 
 def _patch_dismissals(mocker: MockerFixture) -> DismissalStore:
@@ -516,7 +518,7 @@ def test_connect_refreshes_board_with_resolved_user_token(
         logger=mocker.Mock(),
     )
 
-    crisis_buttons.update_board.assert_called_once_with(client, "xoxp-coordinator")
+    crisis_buttons.update_board.assert_called_once_with(client, "xoxp-coordinator", "T_TEAM")
 
 
 def test_resolve_refreshes_board(

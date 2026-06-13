@@ -18,13 +18,16 @@ The Canvas is the durable board (it survives a restart the in-memory index does
 not — ADR-0005); the index stays the fast path (ADR-0003).
 """
 
+from coordinator.announce import announce_board, coordinator_channel_id
 from coordinator.board import BOARD_TITLE, compose_board_markdown
 from coordinator.canvas import CoordinatorBoard, coordinator_board, update_board
 
 __all__ = [
     "BOARD_TITLE",
     "CoordinatorBoard",
+    "announce_board",
     "compose_board_markdown",
     "coordinator_board",
+    "coordinator_channel_id",
     "update_board",
 ]

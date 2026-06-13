@@ -9,13 +9,32 @@ test tree — pythonpath collection).
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
+from pytest_mock import MockerFixture
 
 from entities import Offer, deterministic_id
 from recall.payload import ConnectPayload
 
 OFFER_TS = datetime(2026, 3, 21, 9, 30, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Keep the board hook off the real filesystem and Slack.
+
+    Most of these tests stub ``update_board`` outright, but the isolation test
+    exercises the *real* best-effort board path. Point its canvas-id store at
+    ``tmp_path`` and stub the announce so no test ever reads/writes the real
+    ``.slack/board_canvas_id`` or posts to a coordinator channel (task 018).
+    """
+    from coordinator import canvas_store
+
+    mocker.patch.object(
+        canvas_store, "_id_path", return_value=tmp_path / ".slack" / "board_canvas_id"
+    )
+    mocker.patch("coordinator.canvas.announce_board")
 
 
 @pytest.fixture

@@ -198,7 +198,21 @@ def test_update_board_helper_delegates_to_singleton_publish(
 
     update_board(client, USER_TOKEN)
 
-    publish.assert_called_once_with(client, USER_TOKEN)
+    # update_board threads team_id (None when omitted) through to publish so a
+    # first refresh that has to create the canvas can build a deep-link announce.
+    publish.assert_called_once_with(client, USER_TOKEN, None)
+
+
+def test_update_board_helper_forwards_team_id(
+    mocker: MockerFixture,
+) -> None:
+    """A team id from the Bolt context is threaded through to publish for the announce link."""
+    client = mocker.Mock()
+    publish = mocker.patch("coordinator.canvas.coordinator_board.publish", return_value="F_BOARD")
+
+    update_board(client, USER_TOKEN, "T_TEAM")
+
+    publish.assert_called_once_with(client, USER_TOKEN, "T_TEAM")
 
 
 def test_update_board_helper_swallows_publish_failure(
@@ -214,3 +228,147 @@ def test_update_board_helper_swallows_publish_failure(
 
     # Must not raise.
     assert update_board(client, USER_TOKEN) is None
+
+
+# --- Cross-process canvas-id persistence (task 018) -------------------------
+
+
+def test_create_persists_canvas_id_to_shared_store(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """The script process creates + persists, so the server can reattach."""
+    client = _client(mocker, canvas_id="F_PERSISTED")
+    save = mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+
+    fresh_board.publish(client, USER_TOKEN)
+
+    save.assert_called_once_with("F_PERSISTED")
+
+
+def test_first_publish_loads_persisted_id_and_edits_not_creates(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """A second process reads the script's persisted id and EDITS — no duplicate canvas."""
+    client = _client(mocker, canvas_id="F_SHOULD_NOT_CREATE")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_FROM_SCRIPT")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_FROM_SCRIPT"
+    client.canvases_create.assert_not_called()
+    client.canvases_edit.assert_called_once()
+    assert client.canvases_edit.call_args.kwargs["canvas_id"] == "F_FROM_SCRIPT"
+
+
+def test_missing_store_degrades_to_create(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """A missing/corrupt id file (load -> None) degrades to creating a fresh canvas."""
+    client = _client(mocker, canvas_id="F_FRESH")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_FRESH"
+    client.canvases_create.assert_called_once()
+
+
+def test_persisted_id_loaded_only_once_not_on_every_publish(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """The store is read only when the in-process id is unknown, not on every edit."""
+    client = _client(mocker, canvas_id="F_BOARD")
+    load = mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_SHARED")
+
+    fresh_board.publish(client, USER_TOKEN)  # loads -> edits
+    fresh_board.publish(client, USER_TOKEN)  # id now in process -> edits, no reload
+
+    assert load.call_count == 1
+    assert client.canvases_edit.call_count == 2
+
+
+def test_recreate_still_creates_even_with_persisted_id(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """recreate forces a fresh canvas regardless of a persisted id (clean demo)."""
+    client = _client(mocker, canvas_id="F_FRESH")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_OLD")
+    save = mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+
+    new_id = fresh_board.recreate(client, USER_TOKEN)
+
+    assert new_id == "F_FRESH"
+    client.canvases_create.assert_called_once()
+    client.canvases_edit.assert_not_called()
+    save.assert_called_once_with("F_FRESH")
+
+
+# --- Announce-on-create discoverability (task 018) --------------------------
+
+
+def test_create_announces_board_link_once(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """Creating a canvas announces its link once to the coordinator channel."""
+    client = _client(mocker, canvas_id="F_NEW")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    announce = mocker.patch("coordinator.canvas.announce_board")
+
+    fresh_board.publish(client, USER_TOKEN, team_id="T_TEAM")
+
+    announce.assert_called_once_with(client, canvas_id="F_NEW", team_id="T_TEAM")
+
+
+def test_edit_does_not_announce(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """A board edit (not a create) never re-announces — idempotent discoverability."""
+    client = _client(mocker, canvas_id="F_BOARD")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    announce = mocker.patch("coordinator.canvas.announce_board")
+    fresh_board.publish(client, USER_TOKEN)  # create -> announces
+
+    announce.reset_mock()
+    fresh_board.publish(client, USER_TOKEN)  # edit -> must not announce
+
+    announce.assert_not_called()
+
+
+def test_reattached_id_does_not_announce(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """Reattaching to a persisted canvas (edit path) does not announce — only create does."""
+    client = _client(mocker, canvas_id="F_X")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value="F_FROM_SCRIPT")
+    announce = mocker.patch("coordinator.canvas.announce_board")
+
+    fresh_board.publish(client, USER_TOKEN)
+
+    announce.assert_not_called()
+
+
+def test_announce_failure_does_not_break_publish(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """An announce error never breaks the create — best-effort, returns the id."""
+    client = _client(mocker, canvas_id="F_NEW")
+    mocker.patch("coordinator.canvas.canvas_store.load_canvas_id", return_value=None)
+    mocker.patch("coordinator.canvas.canvas_store.save_canvas_id")
+    mocker.patch("coordinator.canvas.announce_board", side_effect=RuntimeError("boom"))
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_NEW"
