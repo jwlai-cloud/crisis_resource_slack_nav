@@ -24,9 +24,11 @@ click asked. Every action appends to the in-memory audit trail.
 from logging import Logger
 from uuid import UUID
 
-from slack_bolt import Ack
+from slack_bolt import Ack, BoltContext
 from slack_sdk import WebClient
 
+from agent.deps import resolve_user_token
+from coordinator import update_board
 from entities import Offer, Status
 from matching import audit_trail, offer_index
 from recall import ACTION_CONNECT, ACTION_NOT_RELEVANT, ACTION_RESOLVE, ConnectPayload
@@ -166,7 +168,9 @@ def _intro_text(requester: str, payload: ConnectPayload) -> str:
     )
 
 
-def handle_crisis_connect(ack: Ack, body: dict, client: WebClient, logger: Logger) -> None:
+def handle_crisis_connect(
+    ack: Ack, body: dict, client: WebClient, context: BoltContext, logger: Logger
+) -> None:
     """Connect the requester (clicker) and the offerer; flip the card to Mark resolved.
 
     Opens a group DM with both users and posts a sourced intro. Falls back to a DM
@@ -237,8 +241,14 @@ def handle_crisis_connect(ack: Ack, body: dict, client: WebClient, logger: Logge
     block_id = body["actions"][0].get("block_id", "")
     _update_card(body, client, logger, _resolve_button_block(block_id, payload.to_value()))
 
+    # Refresh the coordinator board last — best-effort, already isolated inside
+    # update_board (never raises), so a Canvas hiccup cannot undo the connection.
+    update_board(client, resolve_user_token(context.user_token))
 
-def handle_crisis_resolve(ack: Ack, body: dict, client: WebClient, logger: Logger) -> None:
+
+def handle_crisis_resolve(
+    ack: Ack, body: dict, client: WebClient, context: BoltContext, logger: Logger
+) -> None:
     """Mark a connected match resolved; flip the card to a Resolved state.
 
     Marks the index offer RESOLVED when an offer id is present (so it stops matching
@@ -266,8 +276,13 @@ def handle_crisis_resolve(ack: Ack, body: dict, client: WebClient, logger: Logge
             text=f":white_check_mark: <@{actor}> marked this match resolved.",
         )
 
+    # Refresh the coordinator board last — best-effort (update_board never raises).
+    update_board(client, resolve_user_token(context.user_token))
 
-def handle_crisis_not_relevant(ack: Ack, body: dict, client: WebClient, logger: Logger) -> None:
+
+def handle_crisis_not_relevant(
+    ack: Ack, body: dict, client: WebClient, context: BoltContext, logger: Logger
+) -> None:
     """Dismiss a match: mute its button row, audit it, and remember the dismissal.
 
     No connection, no index change — dismissing is just the human saying "not this
@@ -293,6 +308,10 @@ def handle_crisis_not_relevant(ack: Ack, body: dict, client: WebClient, logger: 
 
     block_id = body["actions"][0].get("block_id", "")
     _update_card(body, client, logger, _muted_context_block(block_id, _DISMISSED_NOTE))
+
+    # Refresh the coordinator board last — the dismissal is a human-confirmed action
+    # the activity log records. Best-effort (update_board never raises).
+    update_board(client, resolve_user_token(context.user_token))
 
 
 # Registered action_ids, exported so the package registrar wires the right handler

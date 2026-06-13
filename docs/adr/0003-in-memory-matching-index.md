@@ -72,3 +72,16 @@ design intact — **supersession (an external store) is not needed** for the
 single-process socket-mode demo. The remaining triggers (multi-process, durable
 matching state) still stand for a future ADR. Decision unchanged; this is a
 hardening note, not a new decision.
+
+## Status note (2026-06-13, task 017)
+
+The "durable matching state (e.g. the coordinator Canvas surviving restarts, W4)"
+revisit trigger named in the Consequences **fired** — and was answered **without
+changing this decision**. Task 017 makes a **Slack Canvas** the durable coordinator
+board: the board's *content* is persisted by Slack (it survives a restart this
+index does not), while this in-memory index **stays the fast path** for matching.
+The board is rendered *from* the index + audit trail; it does not feed them back,
+so there is no new source of truth to reconcile. See
+`docs/adr/0005-canvas-as-durable-board.md`. Index **rehydration on restart** (RTS
+reseed) remains explicitly **deferred** — a freshly created board renders empty
+status groups until new offers arrive, which is honest. Decision here unchanged.

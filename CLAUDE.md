@@ -128,6 +128,7 @@ Opinionated agent-team workflow in two modes. Canonical lifecycle and rules live
 | `make pre-commit` | format-check + lint-check + unit tests. |
 | `make ci` | Full pre-PR fan: install → format/lint checks → tests. |
 | `make run` | `slack run` against the sandbox. |
+| `make board` | (Re)create the coordinator board Canvas on demand (`scripts/open_board.py`). Needs `SLACK_USER_TOKEN` (user `canvases:write`). The board then auto-refreshes on every Connect / Resolve / Dismiss within the running agent process (task 017, ADR-0005). |
 
 > **Manual QA order:** `format-fix → lint-fix → format-check → lint-check → pre-commit → unit-tests`. Fixers before checkers. CI runs the non-fix variants only.
 

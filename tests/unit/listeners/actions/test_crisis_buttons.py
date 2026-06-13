@@ -28,12 +28,25 @@ from recall.payload import ConnectPayload
 
 
 def _patch_singletons(mocker: MockerFixture) -> tuple[OfferIndex, AuditTrail]:
-    """Swap the module-level index + audit trail for fresh, isolated instances."""
+    """Swap the module-level index + audit trail for fresh, isolated instances.
+
+    Also stubs out ``update_board`` (the task-017 coordinator-board hook): these
+    tests assert the button state machine, not the Canvas, and the board update is
+    a best-effort, isolated side effect with its own tests in
+    ``tests/unit/coordinator``. Stubbing it keeps these tests Slack-free and pins
+    that a board failure can never be in the button's path here.
+    """
     index = OfferIndex()
     trail = AuditTrail()
     mocker.patch.object(crisis_buttons, "offer_index", index)
     mocker.patch.object(crisis_buttons, "audit_trail", trail)
+    mocker.patch.object(crisis_buttons, "update_board")
     return index, trail
+
+
+def _context(mocker: MockerFixture, *, user_token: str | None = "xoxp-user") -> object:
+    """A BoltContext-like stub carrying the user token the board hook reads."""
+    return mocker.Mock(user_token=user_token)
 
 
 def _patch_dismissals(mocker: MockerFixture) -> DismissalStore:
@@ -66,7 +79,7 @@ def test_connect_opens_group_dm_with_requester_and_offerer(
     )
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     users = client.conversations_open.call_args.kwargs["users"]
@@ -83,7 +96,11 @@ def test_connect_acks_immediately(
     ack = mocker.Mock()
 
     crisis_buttons.handle_crisis_connect(
-        ack=ack, body=make_action_body(), client=_client(mocker), logger=mocker.Mock()
+        ack=ack,
+        body=make_action_body(),
+        client=_client(mocker),
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     ack.assert_called_once()
@@ -102,7 +119,7 @@ def test_connect_posts_sourced_intro(
     )
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     intro = client.chat_postMessage.call_args.kwargs["text"]
@@ -126,7 +143,11 @@ def test_connect_marks_index_offer_matched(
     )
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=_client(mocker), logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=body,
+        client=_client(mocker),
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     assert index.lookup(offer.id).status is Status.MATCHED
@@ -141,7 +162,11 @@ def test_connect_swaps_in_mark_resolved_button(
     client = _client(mocker)
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=make_action_body(), client=client, logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=make_action_body(),
+        client=client,
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     updated_blocks = client.chat_update.call_args.kwargs["blocks"]
@@ -164,7 +189,11 @@ def test_connect_falls_back_to_offerer_dm_when_group_dm_fails(
     ]
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=make_action_body(), client=client, logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=make_action_body(),
+        client=client,
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     assert client.conversations_open.call_count == 2
@@ -186,6 +215,7 @@ def test_connect_posts_visible_message_when_both_dm_attempts_fail(
         ack=mocker.Mock(),
         body=make_action_body(clicker="U_REQUESTER"),
         client=client,
+        context=_context(mocker),
         logger=mocker.Mock(),
     )
 
@@ -207,6 +237,7 @@ def test_connect_records_audit_event(
         ack=mocker.Mock(),
         body=make_action_body(clicker="U_REQUESTER"),
         client=_client(mocker),
+        context=_context(mocker),
         logger=mocker.Mock(),
     )
 
@@ -234,7 +265,11 @@ def test_resolve_marks_index_offer_resolved(
     )
 
     crisis_buttons.handle_crisis_resolve(
-        ack=mocker.Mock(), body=body, client=mocker.Mock(), logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=body,
+        client=mocker.Mock(),
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     assert index.lookup(offer.id).status is Status.RESOLVED
@@ -250,7 +285,7 @@ def test_resolve_mutes_card_and_posts_threaded_confirmation(
     body = make_action_body(action_id="crisis_resolve", clicker="U_REQUESTER")
 
     crisis_buttons.handle_crisis_resolve(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     updated_blocks = client.chat_update.call_args.kwargs["blocks"]
@@ -272,6 +307,7 @@ def test_resolve_records_audit_event(
         ack=mocker.Mock(),
         body=make_action_body(action_id="crisis_resolve", clicker="U_REQUESTER"),
         client=mocker.Mock(),
+        context=_context(mocker),
         logger=mocker.Mock(),
     )
 
@@ -293,7 +329,7 @@ def test_not_relevant_mutes_card_to_dismissed(
     body = make_action_body(action_id="crisis_not_relevant")
 
     crisis_buttons.handle_crisis_not_relevant(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     updated_blocks = client.chat_update.call_args.kwargs["blocks"]
@@ -317,7 +353,7 @@ def test_not_relevant_makes_no_connection_and_no_index_change(
     )
 
     crisis_buttons.handle_crisis_not_relevant(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     client.conversations_open.assert_not_called()
@@ -336,6 +372,7 @@ def test_not_relevant_records_audit_event(
         ack=mocker.Mock(),
         body=make_action_body(action_id="crisis_not_relevant"),
         client=mocker.Mock(),
+        context=_context(mocker),
         logger=mocker.Mock(),
     )
 
@@ -355,7 +392,11 @@ def test_not_relevant_records_dismissal_for_the_clicker(
     body = make_action_body(action_id="crisis_not_relevant", clicker="U_REQUESTER", payload=payload)
 
     crisis_buttons.handle_crisis_not_relevant(
-        ack=mocker.Mock(), body=body, client=mocker.Mock(), logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=body,
+        client=mocker.Mock(),
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     # Identity follows offer_id -> permalink -> text; this payload has an offer id.
@@ -374,7 +415,11 @@ def test_not_relevant_dismissal_is_keyed_to_the_clicker_only(
     body = make_action_body(action_id="crisis_not_relevant", clicker="U_A", payload=payload)
 
     crisis_buttons.handle_crisis_not_relevant(
-        ack=mocker.Mock(), body=body, client=mocker.Mock(), logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=body,
+        client=mocker.Mock(),
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     identity = match_identity(permalink="https://x/p1")
@@ -395,7 +440,7 @@ def test_malformed_payload_posts_visible_message_and_does_nothing(
     body = make_action_body(value="not json {")
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     client.chat_postEphemeral.assert_called_once()
@@ -416,7 +461,11 @@ def test_rts_only_match_connect_does_not_touch_index(
     )
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=_client(mocker), logger=mocker.Mock()
+        ack=mocker.Mock(),
+        body=body,
+        client=_client(mocker),
+        context=_context(mocker),
+        logger=mocker.Mock(),
     )
 
     spy.assert_not_called()  # no offer id -> no index op
@@ -437,12 +486,107 @@ def test_connect_double_click_is_idempotent(
     client = _client(mocker)
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
     dm_posts_after_first = client.chat_postMessage.call_count
 
     crisis_buttons.handle_crisis_connect(
-        ack=mocker.Mock(), body=body, client=client, logger=mocker.Mock()
+        ack=mocker.Mock(), body=body, client=client, context=_context(mocker), logger=mocker.Mock()
     )
 
     assert client.chat_postMessage.call_count == dm_posts_after_first
+
+
+# ----- coordinator-board hook (task 017) -----
+
+
+def test_connect_refreshes_board_with_resolved_user_token(
+    mocker: MockerFixture,
+    make_action_body: Callable[..., dict],
+) -> None:
+    """A successful connect refreshes the coordinator board with the user token."""
+    _patch_singletons(mocker)  # patches update_board to a Mock
+    client = _client(mocker)
+
+    crisis_buttons.handle_crisis_connect(
+        ack=mocker.Mock(),
+        body=make_action_body(),
+        client=client,
+        context=_context(mocker, user_token="xoxp-coordinator"),
+        logger=mocker.Mock(),
+    )
+
+    crisis_buttons.update_board.assert_called_once_with(client, "xoxp-coordinator")
+
+
+def test_resolve_refreshes_board(
+    mocker: MockerFixture,
+    make_action_body: Callable[..., dict],
+) -> None:
+    """A resolve refreshes the coordinator board."""
+    _patch_singletons(mocker)
+    client = mocker.Mock()
+
+    crisis_buttons.handle_crisis_resolve(
+        ack=mocker.Mock(),
+        body=make_action_body(action_id="crisis_resolve"),
+        client=client,
+        context=_context(mocker),
+        logger=mocker.Mock(),
+    )
+
+    crisis_buttons.update_board.assert_called_once()
+
+
+def test_not_relevant_refreshes_board(
+    mocker: MockerFixture,
+    make_action_body: Callable[..., dict],
+) -> None:
+    """A dismissal refreshes the coordinator board (the activity log records it)."""
+    _patch_singletons(mocker)
+    _patch_dismissals(mocker)
+    client = mocker.Mock()
+
+    crisis_buttons.handle_crisis_not_relevant(
+        ack=mocker.Mock(),
+        body=make_action_body(action_id="crisis_not_relevant"),
+        client=client,
+        context=_context(mocker),
+        logger=mocker.Mock(),
+    )
+
+    crisis_buttons.update_board.assert_called_once()
+
+
+def test_board_hook_is_isolated_so_a_failure_never_breaks_connect(
+    mocker: MockerFixture,
+    make_action_body: Callable[..., dict],
+) -> None:
+    """update_board is the board boundary — it never raises, so connect always completes.
+
+    Here the real (non-stubbed) update_board is exercised with a client whose
+    canvas calls fail; the connect's DM + card flip must still stand. This pins
+    that the board hook is additive and isolated (task-017 constraint).
+    """
+    index = OfferIndex()
+    trail = AuditTrail()
+    mocker.patch.object(crisis_buttons, "offer_index", index)
+    mocker.patch.object(crisis_buttons, "audit_trail", trail)
+    # update_board NOT stubbed — exercise the real best-effort path with a failing
+    # canvas, against a fresh board so no prior test's stored id leaks in.
+    from coordinator.canvas import CoordinatorBoard
+
+    mocker.patch("coordinator.canvas.coordinator_board", CoordinatorBoard())
+    client = _client(mocker)
+    client.canvases_create.side_effect = RuntimeError("canvas down")
+
+    # Must not raise; the connect's intro is still posted.
+    crisis_buttons.handle_crisis_connect(
+        ack=mocker.Mock(),
+        body=make_action_body(),
+        client=client,
+        context=_context(mocker),
+        logger=mocker.Mock(),
+    )
+
+    client.chat_postMessage.assert_called()  # the intro went out despite the board failure
