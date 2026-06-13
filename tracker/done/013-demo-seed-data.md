@@ -176,3 +176,11 @@ $ make integration-tests
 - The `·crn-seed` marker delete under `--fresh` will catch any message literally containing the substring, including a (vanishingly unlikely) real human message. Behavior is documented and reasoned in the docstring; acceptable as designed.
 
 **VERDICT: PASS**
+
+### [Orchestrator] 2026-06-13 — AC5 live verification (PASS)
+Ran `make seed-demo` against the sandbox: 12 messages posted into C0BA6LCKK42
+(6 offers, 2 SES/DFES notices, 4 chatter). Verified RTS-matchable — baby formula /
+spare room / first-aid kit all returned by assistant.search.context within seconds.
+Workspace is demo-populated. (Note: pre-existing live-test debris also sits in the
+channel; a final cleanup with `make seed-demo ARGS=--fresh` + manual debris removal
+is a W5 pre-recording step.)
