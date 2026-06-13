@@ -10,11 +10,13 @@ Run it (the agent process need not be running — this is a standalone one-shot)
 
     uv run python -m scripts.open_board
 
-It creates a brand-new standalone Canvas owned by the acting user, writes the
-current board into it, **persists the canvas id** to the shared
-``.slack/board_canvas_id`` file, and **announces** the board link once to
-``COORDINATOR_CHANNEL`` (when set). By default it REUSES the existing board; pass
-which is what you want for a clean demo.
+It find-or-creates the **channel canvas** of ``CRISIS_CHANNEL`` (a permanent
+top-bar tab — task 025, ADR-0005) owned by the acting user, writes the current
+board into it, **persists the canvas id** to the shared ``.slack/board_canvas_id``
+file, and **announces** the board tab once to ``COORDINATOR_CHANNEL`` (when set). By
+default it REUSES the existing board (reattach to the persisted id, else the
+channel's existing canvas, else create); pass ``--fresh`` to delete the prior board
+and mint a clean one, which is what you want for a clean demo.
 
 The persisted id is the bridge across processes (task 018): the live agent's first
 board refresh reads that same file and *edits* this canvas instead of minting its
@@ -86,8 +88,8 @@ def main() -> int:
         logger.error("Could not create the coordinator board canvas — see the warning above.")
         return 1
 
-    logger.info("Coordinator board canvas created + persisted: %s", canvas_id)
-    logger.info("Open it from Slack: search your canvases or use the announced link.")
+    logger.info("Coordinator board channel canvas created + persisted: %s", canvas_id)
+    logger.info("Open it from Slack: the Community Cases tab in the top bar of CRISIS_CHANNEL.")
     return 0
 
 

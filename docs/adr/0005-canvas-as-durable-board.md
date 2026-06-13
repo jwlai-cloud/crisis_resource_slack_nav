@@ -2,6 +2,11 @@
 
 **Status:** Accepted
 **Date:** 2026-06-13
+**Amended:** 2026-06-13 (task 025) — the board is now the **channel canvas** of
+`CRISIS_CHANNEL`, a permanent top-bar tab, superseding the original *standalone*
+canvas. See the "Amendment — channel canvas (task 025)" section at the end; the
+core decision (Slack Canvas as the durable, full-replace board on the user token)
+stands.
 
 ## Context
 
@@ -108,3 +113,61 @@ does not feed them back.
   For a demo-scale board this is simplest and avoids section-id bookkeeping; a very
   large board would want incremental section edits (`canvases.sections.lookup` +
   targeted ops), which is a future optimisation, not a v1 need.
+
+## Amendment — channel canvas (task 025)
+
+The original decision made the board a **standalone** canvas (`canvases.create`).
+That works, but a standalone canvas only surfaces under the channel's "Files" list,
+so reaching it needed a discoverability scaffold: a one-time link announce (task
+018) and a top-of-channel bookmark (task 023). Both are indirection around a canvas
+that is not *natively* placed.
+
+Slack's native always-visible placement for a board is the **channel canvas**: every
+channel may have exactly one, and it renders as a permanent tab in the channel's top
+bar. Access is tied to channel access — no share step, no bookmark, no Files hunt.
+
+**Amended decision.** The board is the channel canvas of `CRISIS_CHANNEL` (the same
+channel the passive-listening gate uses, ADR-0004; read via
+`listeners.channel_gate.designated_channel_id`, not a duplicated env read).
+`coordinator/canvas.py` now:
+
+- **Find-or-creates** the channel canvas: reattach to the persisted id
+  (`coordinator/canvas_store.py`, the cross-process bridge) → else discover the
+  channel's already-attached canvas via `conversations.info`
+  (`channel.properties.canvas.file_id`) and reattach → else
+  `conversations.canvases.create(channel_id=…, document_content=…)`, which flips on
+  the tab. A `channel_canvas_already_exists` race on create re-discovers and
+  reattaches rather than erroring (a channel has only one canvas).
+- **Edits unchanged.** A channel canvas is edited by the *same* `canvases.edit`
+  (`replace`, no `section_id`); there is no separate channel-canvas edit. The
+  whole-document recompose model is untouched.
+- **Scope unchanged.** `conversations.canvases.create` uses the same
+  `canvases:write` user scope the standalone create used — no new scope, no
+  re-install. The only added requirement is channel *membership* (public channel,
+  or the user invited to a private one), which the demo already satisfies.
+
+**Discovery mechanisms obsoleted.** The tab is the discovery now:
+
+- The task-023 **bookmark** is removed from the create path — the permanent tab
+  supersedes it. The `bookmarks:*` manifest scope and the `coordinator/bookmark.py`
+  module are left in place (harmless, no cost) rather than ripped out.
+- The task-018 **announce** is kept as a *minimal* one-time "the Community Cases
+  board tab is live" courtesy note on create only (never on edits) — it costs
+  nothing and nudges a coordinator not yet looking at the channel. It is no longer
+  the discovery mechanism, just a convenience; dropping it entirely would also have
+  been acceptable.
+
+**Restart reattach is now solved, not deferred.** The original ADR deferred
+re-finding the prior canvas across a restart (the `canvas_id` lived only in a
+process-local field). As a channel canvas the board is re-findable from Slack
+itself: when the persisted id file is gone, the create path discovers the channel's
+existing canvas via `conversations.info` and reattaches. So a restart no longer
+mints a fresh canvas — it reattaches to the channel's one canvas. (The persisted
+store remains the primary, faster reattach key; `conversations.info` is the
+fallback.) The first consequence above — "the board's content is durable; the canvas
+handle is not" — is superseded by this for the channel-canvas case.
+
+**Best-effort posture preserved.** Create / discover / edit failures (and an unset
+`CRISIS_CHANNEL`) are logged and swallowed; the publisher returns `None` and never
+raises, so a Canvas problem can never break a Connect / Resolve / Dismiss button
+(the degraded-state guardrail), exactly as before.

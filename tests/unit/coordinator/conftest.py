@@ -29,6 +29,10 @@ def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
     Point the id store at ``tmp_path`` and stub the announce so a test only sees
     those side effects when it opts in (re-patches them itself). Tests that assert
     the persistence/announce contract re-patch over these to inspect the calls.
+
+    The bookmark is no longer hooked into the canvas create (task 025: the channel
+    canvas is a permanent tab, superseding the bookmark), so there is nothing to
+    stub there.
     """
     from coordinator import canvas_store
 
@@ -36,7 +40,6 @@ def _isolate_canvas_side_effects(tmp_path: Path, mocker: MockerFixture) -> None:
         canvas_store, "_id_path", return_value=tmp_path / ".slack" / "board_canvas_id"
     )
     mocker.patch("coordinator.canvas.announce_board")
-    mocker.patch("coordinator.canvas.upsert_board_bookmark")
 
 
 @pytest.fixture

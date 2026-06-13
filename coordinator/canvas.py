@@ -5,14 +5,25 @@ find-or-create lifecycle and the best-effort update; :mod:`coordinator.board`
 owns the pure markdown composition it renders.
 
 **Canvas API decision** (see the task log + ``docs/adr/0005-canvas-as-durable-board.md``).
-A live-updating standalone canvas is supported by the installed ``slack_sdk``:
+The board is the **channel canvas** of ``CRISIS_CHANNEL`` (task 025): a permanent
+top-bar tab, not a standalone canvas a coordinator has to hunt for under Files or
+reach through a bookmark. Access is tied to channel access — anyone in the channel
+sees the tab. The installed ``slack_sdk`` supports the full lifecycle:
 
-* ``canvases_create(title=..., document_content={"type":"markdown","markdown":...})``
-  mints the board and returns its ``canvas_id``.
+* ``conversations_canvases_create(channel_id=..., document_content={"type":
+  "markdown","markdown":...})`` mints the channel's canvas (flipping on the tab)
+  and returns its ``canvas_id``. A channel has exactly ONE canvas: calling create a
+  second time returns ``channel_canvas_already_exists`` — so this is a *find-or-
+  create*, never a blind create (see :meth:`CoordinatorBoard._create_channel_canvas`).
+* ``conversations_info(channel=...)`` exposes an already-attached channel canvas at
+  ``channel.properties.canvas.file_id`` — the discovery fallback when the persisted
+  id is gone (e.g. after a restart) so we reattach rather than erroring on a second
+  create.
 * ``canvases_edit(canvas_id=..., changes=[{"operation":"replace",
   "document_content":{...}}])`` with **no** ``section_id`` replaces the *entire*
-  document — so we recompose the whole board from current state on every update
-  and overwrite, never diffing sections.
+  document — unchanged from the standalone era: there is no separate
+  ``conversations_canvases_edit``, a channel canvas is edited by the same call, so
+  the whole-document recompose-and-overwrite model is untouched.
 
 **Token.** The canvas is authored as the acting *user* (the coordinator): the
 manifest grants ``canvases:read``/``canvases:write`` as user scopes, so the write
@@ -28,12 +39,12 @@ back to the bot token, which lacks ``canvases:write``.
 
 **Durability + restart.** The Canvas is the durable board: Slack persists it, so it
 survives an agent restart even though the in-memory index does not (ADR-0003,
-ADR-0005). The ``canvas_id`` itself lives in a process-local store here — after a
-restart that handle is lost, so the next demand-trigger creates a *fresh* canvas
-rather than re-finding the old one. That is the deliberate W4 scope: the board's
-*content* is durable in Slack; reattaching to a prior canvas across restarts is the
-deferred rehydration question (ADR-0005). For the demo the coordinator (re)opens
-the board on demand via the entry point.
+ADR-0005). The ``canvas_id`` lives in a process-local field, bridged across the
+``make board`` script and the agent by the persisted store
+(:mod:`coordinator.canvas_store`). As a channel canvas it is now also *re-findable*
+from Slack itself: if the persisted id is gone, the create path discovers the
+channel's existing canvas via ``conversations.info`` and reattaches to it, so a
+restart no longer orphans the board behind a second-create error.
 
 **Best-effort, never raises.** Every public call here catches *all* exceptions,
 logs them, and returns rather than propagating — a Canvas failure must never break
@@ -45,11 +56,11 @@ import logging
 import threading
 
 from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 from coordinator import canvas_store
-from coordinator.announce import announce_board, canvas_link
-from coordinator.board import BOARD_TITLE, compose_board_markdown
-from coordinator.bookmark import upsert_board_bookmark
+from coordinator.announce import announce_board
+from coordinator.board import compose_board_markdown
 from coordinator.names import resolve_display_names
 from coordinator.situation import SituationSnapshot, read_situation
 from entities import Offer
@@ -57,6 +68,21 @@ from matching.audit import AuditEvent, audit_trail
 from matching.index import offer_index
 
 logger = logging.getLogger(__name__)
+
+
+def designated_channel_id() -> str | None:
+    """The CRISIS_CHANNEL id the board's canvas attaches to, or ``None`` when off.
+
+    Delegates to :func:`listeners.channel_gate.designated_channel_id` — the single
+    source of the ``CRISIS_CHANNEL`` env read (ADR-0004), not duplicated here. The
+    import is deferred to call time to avoid an import cycle: ``listeners/__init__``
+    eagerly pulls the action handlers, which import this very module. Tests patch
+    this name to pin the channel without touching the environment.
+    """
+    from listeners.channel_gate import designated_channel_id as _designated_channel_id
+
+    return _designated_channel_id()
+
 
 # Prefix a button handler writes when an audit target names an offerer by id (see
 # ``crisis_buttons._offer_target``); the user id after it is worth resolving too.
@@ -126,19 +152,26 @@ def _compose_with_names(client: WebClient, user_token: str) -> str:
 # The canvas write authenticates as the acting user (a canvases:write USER scope)
 # via slack_sdk's first-class per-call ``token=`` override. NOTE: a manual
 # ``headers={"Authorization": ...}`` override does NOT work for the typed
-# ``canvases_*`` methods — slack_sdk resets Authorization from its own token
-# resolution after merging custom headers, so an empty bot token yields
-# ``not_authed``. ``token=`` is the override that actually takes effect.
+# ``canvases_*`` / ``conversations_canvases_*`` methods — slack_sdk resets
+# Authorization from its own token resolution after merging custom headers, so an
+# empty bot token yields ``not_authed``. ``token=`` is the override that takes
+# effect. ``conversations.canvases.create`` needs the same ``canvases:write``
+# scope as the standalone create did — no NEW scope — plus channel membership
+# (public channel, or the user invited to a private one); access to the canvas is
+# then tied to channel access (task 025).
 
 
 class CoordinatorBoard:
-    """Find-or-create + update wrapper around one coordinator Canvas.
+    """Find-or-create + update wrapper around the CRISIS_CHANNEL channel canvas.
 
-    Holds the created canvas's id in a process-local field (mirroring the
-    in-memory posture of the index and audit trail it renders). The first publish
-    creates the canvas; every later publish edits it via a full ``replace``. A
-    :class:`threading.Lock` guards the id read-modify-write because button handlers
-    publish from Bolt's thread pool.
+    Holds the canvas's id in a process-local field (mirroring the in-memory posture
+    of the index and audit trail it renders, bridged across processes by
+    :mod:`coordinator.canvas_store`). The first publish find-or-creates the channel
+    canvas — reattaching to a persisted id, else a canvas discovered on the channel
+    via ``conversations.info``, else a fresh ``conversations.canvases.create`` that
+    flips on the permanent top-bar tab; every later publish edits it via a full
+    ``replace``. A :class:`threading.Lock` guards the id read-modify-write because
+    button handlers publish from Bolt's thread pool.
     """
 
     def __init__(self) -> None:
@@ -158,25 +191,27 @@ class CoordinatorBoard:
         team_id: str | None = None,
         team_url: str | None = None,
     ) -> str | None:
-        """Render the current board state and write it to the Canvas; return its id.
+        """Render the current board state and write it to the channel canvas; return its id.
 
         Composes the board from the live singletons (offer index + audit trail),
-        then either creates the canvas (first call) or replaces its whole document
-        (later calls), authenticating as the user via ``user_token``.
+        then either find-or-creates the channel canvas (first call) or replaces its
+        whole document (later calls), authenticating as the user via ``user_token``.
 
-        **Cross-process reattach (task 018).** Before minting a new canvas, the
-        first publish loads the id persisted by the other process
-        (:func:`coordinator.canvas_store.load_canvas_id`) — so the ``make board``
-        script and the live agent operate on the *same* canvas. Only when no
-        persisted id exists does it create one, then persist it (so the other
-        process reattaches) and announce its link once (:func:`announce_board`).
+        **Find-or-create.** Before minting, the first publish loads the id persisted
+        by the other process (:func:`coordinator.canvas_store.load_canvas_id`) — so
+        the ``make board`` script and the live agent operate on the *same* canvas.
+        Only when no persisted id exists does it call
+        :meth:`_create_channel_canvas`, which itself discovers the channel's existing
+        canvas (``conversations.info``) before creating, so a restart with a lost id
+        file reattaches rather than erroring on a second create.
 
-        Best-effort: a missing token, or any API / client / file failure, is
-        logged and swallowed — this returns ``None`` and never raises, so a caller
-        hooked into a button handler is never broken by a Canvas problem.
+        Best-effort: a missing token, an unset ``CRISIS_CHANNEL``, or any API /
+        client / file failure, is logged and swallowed — this returns ``None`` and
+        never raises, so a caller hooked into a button handler is never broken by a
+        Canvas problem.
 
-        ``team_id`` is used only to build a deep link in the create announcement;
-        it is optional and the publish works without it.
+        ``team_id`` / ``team_url`` are used only to build a deep link in the create
+        announcement; they are optional and the publish works without them.
         """
         if not user_token:
             logger.info("Coordinator board update skipped: no user token (canvases:write needed)")
@@ -190,7 +225,9 @@ class CoordinatorBoard:
                     # before deciding to mint a fresh one.
                     canvas_id = canvas_store.load_canvas_id()
                 if canvas_id is None:
-                    canvas_id = self._create(client, user_token, markdown, team_id, team_url)
+                    canvas_id = self._create_channel_canvas(
+                        client, user_token, markdown, team_id, team_url
+                    )
                     self._canvas_id = canvas_id
                 else:
                     self._replace(client, user_token, canvas_id, markdown)
@@ -234,10 +271,13 @@ class CoordinatorBoard:
         team_id: str | None,
         team_url: str | None = None,
     ) -> str | None:
-        """Like :meth:`publish` but always creates — bypasses the persisted-id reattach.
+        """Like :meth:`publish` but always creates — bypasses the find-or-create reattach.
 
-        Backs :meth:`recreate`: the demo "summon a clean board" path must not
-        reattach to the old canvas the store points at. Best-effort, never raises.
+        Backs :meth:`recreate`: the demo "summon a clean board" path deletes the
+        prior canvas, then mints a fresh channel canvas via
+        :meth:`_mint_channel_canvas` (no persisted-id load, no ``conversations.info``
+        discovery — both would reattach to a canvas the recreate just dropped).
+        Best-effort, never raises.
         """
         if not user_token:
             logger.info("Coordinator board update skipped: no user token (canvases:write needed)")
@@ -245,14 +285,16 @@ class CoordinatorBoard:
         try:
             markdown = _compose_with_names(client, user_token)
             with self._lock:
-                canvas_id = self._create(client, user_token, markdown, team_id, team_url)
+                canvas_id = self._mint_channel_canvas(
+                    client, user_token, markdown, team_id, team_url
+                )
                 self._canvas_id = canvas_id
             return canvas_id
         except Exception as exc:
             logger.warning("Coordinator board recreate failed: %s", exc)
             return None
 
-    def _create(
+    def _create_channel_canvas(
         self,
         client: WebClient,
         user_token: str,
@@ -260,27 +302,129 @@ class CoordinatorBoard:
         team_id: str | None,
         team_url: str | None = None,
     ) -> str:
-        """Create the standalone canvas with the board markdown; return its id.
+        """Find-or-create the channel canvas for ``CRISIS_CHANNEL``; return its id.
 
-        Authored as the acting user via the per-call ``Authorization`` override.
-        Raises ``KeyError`` if Slack returns no ``canvas_id`` — caught by
-        :meth:`publish` and logged, so the board simply stays uncreated rather than
+        The board is the channel's one canvas (task 025), so this is a *find-or-
+        create*, not a blind create:
+
+        1. **Discover** an already-attached channel canvas via ``conversations.info``
+           (``channel.properties.canvas.file_id``). If found, persist + reattach
+           (edit) it — no announce, it is not a fresh board. This is the restart
+           reattach path the persisted store cannot cover (a deleted id file).
+        2. Else **create** the channel canvas with
+           ``conversations.canvases.create``, which flips on the permanent top-bar
+           tab. A race that yields ``channel_canvas_already_exists`` re-discovers
+           the canvas the other writer created rather than crashing.
+
+        Raises ``RuntimeError`` if no channel is configured (``CRISIS_CHANNEL``
+        unset) or ``KeyError`` if Slack returns no ``canvas_id`` — both caught by
+        :meth:`publish` and logged, so the board stays uncreated rather than
         crashing the handler.
-
-        On a successful create the id is persisted to the shared store (so the
-        other process reattaches instead of minting a duplicate), the board link
-        is announced once to the coordinator channel, and a persistent channel
-        bookmark to the board is added/updated. All three are best-effort and
-        isolated: a persist, announce, or bookmark failure is logged inside its
-        own helper and never undoes the create.
         """
-        response = client.canvases_create(
-            title=BOARD_TITLE,
+        channel = designated_channel_id()
+        if channel is None:
+            raise RuntimeError(
+                "No CRISIS_CHANNEL configured — the board has no channel to attach its canvas to"
+            )
+
+        discovered = self._discover_channel_canvas_id(client, user_token, channel)
+        if discovered is not None:
+            logger.info("Reattaching to existing channel canvas %s in %s", discovered, channel)
+            canvas_store.save_canvas_id(discovered)
+            self._replace(client, user_token, discovered, markdown)
+            return discovered
+
+        try:
+            response = client.conversations_canvases_create(
+                channel_id=channel,
+                document_content=_document_content(markdown),
+                token=user_token,
+            )
+        except SlackApiError as exc:
+            if (exc.response or {}).get("error") == "channel_canvas_already_exists":
+                # Lost a create race: another writer attached the channel canvas
+                # between our discovery and our create. Re-discover and reattach.
+                raced = self._discover_channel_canvas_id(client, user_token, channel)
+                if raced is None:
+                    raise
+                logger.info("Channel canvas already existed (race) — reattaching to %s", raced)
+                canvas_store.save_canvas_id(raced)
+                self._replace(client, user_token, raced, markdown)
+                return raced
+            raise
+
+        canvas_id = str(response["canvas_id"])
+        logger.info("Created coordinator board channel canvas %s in %s", canvas_id, channel)
+        self._after_create(client, canvas_id, team_id, team_url, user_token)
+        return canvas_id
+
+    def _mint_channel_canvas(
+        self,
+        client: WebClient,
+        user_token: str,
+        markdown: str,
+        team_id: str | None,
+        team_url: str | None = None,
+    ) -> str:
+        """Create the channel canvas unconditionally — backs :meth:`recreate`.
+
+        The demo "summon a clean board" path deletes the prior canvas first, so the
+        channel has none; this mints a fresh one without the discovery/reattach the
+        normal create runs (a recreate must never reattach to the canvas the store
+        pointed at). Persists + announces exactly like a first create.
+        """
+        channel = designated_channel_id()
+        if channel is None:
+            raise RuntimeError(
+                "No CRISIS_CHANNEL configured — the board has no channel to attach its canvas to"
+            )
+        response = client.conversations_canvases_create(
+            channel_id=channel,
             document_content=_document_content(markdown),
             token=user_token,
         )
         canvas_id = str(response["canvas_id"])
-        logger.info("Created coordinator board canvas %s", canvas_id)
+        logger.info("Created coordinator board channel canvas %s in %s", canvas_id, channel)
+        self._after_create(client, canvas_id, team_id, team_url, user_token)
+        return canvas_id
+
+    @staticmethod
+    def _discover_channel_canvas_id(client: WebClient, user_token: str, channel: str) -> str | None:
+        """The channel's existing canvas id from ``conversations.info``, or ``None``.
+
+        Reads ``channel.properties.canvas`` — the documented location of an
+        already-attached channel canvas (``conversations.canvases.create`` ref). The
+        id key is ``file_id`` per Slack's shape; ``id``/``canvas_id`` are accepted as
+        defensive fallbacks. Best-effort: any failure (info down, missing membership,
+        no canvas yet) returns ``None`` so the caller degrades to creating one.
+        """
+        try:
+            response = client.conversations_info(channel=channel, token=user_token)
+        except Exception as exc:
+            logger.info("conversations.info lookup failed (will create canvas): %s", exc)
+            return None
+        canvas = ((response.get("channel") or {}).get("properties") or {}).get("canvas") or {}
+        file_id = canvas.get("file_id") or canvas.get("id") or canvas.get("canvas_id")
+        return str(file_id) if file_id else None
+
+    def _after_create(
+        self,
+        client: WebClient,
+        canvas_id: str,
+        team_id: str | None,
+        team_url: str | None,
+        user_token: str,
+    ) -> None:
+        """Persist the new canvas id and announce its link once — both best-effort.
+
+        Runs only on a *real* create (not a reattach): persists to the shared store
+        so the other process reattaches instead of minting a duplicate, then posts
+        the one-time "the Community Cases board tab is live" announce. The tab itself
+        is now the primary discovery (task 025) — the announce is a minimal courtesy
+        note, kept because it costs nothing and helps a coordinator who is not yet
+        looking at the channel. The bookmark (task 023) is gone: the permanent tab
+        supersedes it. An announce failure is logged and never undoes the create.
+        """
         canvas_store.save_canvas_id(canvas_id)
         try:
             announce_board(
@@ -294,19 +438,6 @@ class CoordinatorBoard:
             # announce_board is already best-effort, but never let an unexpected
             # error here undo a successful create.
             logger.warning("Coordinator board announce raised unexpectedly: %s", exc)
-        try:
-            # The persistent quick link: a single top-of-channel bookmark to the
-            # board, added once on create / updated in place on recreate. Shares
-            # the announce's link form and the same best-effort posture — a
-            # bookmark failure never undoes the create (task 023).
-            upsert_board_bookmark(
-                client,
-                link=canvas_link(canvas_id=canvas_id, team_id=team_id, team_url=team_url),
-                user_token=user_token,
-            )
-        except Exception as exc:
-            logger.warning("Coordinator board bookmark raised unexpectedly: %s", exc)
-        return canvas_id
 
     def _replace(self, client: WebClient, user_token: str, canvas_id: str, markdown: str) -> None:
         """Replace the entire canvas document with the freshly composed board.
