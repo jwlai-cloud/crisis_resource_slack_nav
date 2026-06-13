@@ -267,6 +267,108 @@ def test_publish_swallows_name_resolution_failure(
     assert "U_LIVE" in markdown
 
 
+# --- Situation section wiring (task 020) ------------------------------------
+
+
+def _situation_snapshot(*, road_available: bool = True):
+    """A SituationSnapshot for the publish-path tests (built from real types)."""
+    from datetime import UTC, datetime
+
+    from coordinator.situation import SituationFeed, SituationSnapshot
+    from mocks.server import RoadClosure
+
+    fetched_at = datetime(2026, 3, 15, 6, 30, tzinfo=UTC)
+    if road_available:
+        road = SituationFeed(
+            feed="road_closures",
+            available=True,
+            fetched_at=fetched_at,
+            records=(
+                RoadClosure(
+                    road="Minilya-Exmouth Road",
+                    segment="Yannarie River crossing",
+                    status="CLOSED",
+                    reason="Floodwater over road.",
+                    detour="No detour available.",
+                    updated_at=fetched_at,
+                ),
+            ),
+        )
+    else:
+        road = SituationFeed(feed="road_closures", available=False, detail="down")
+    return SituationSnapshot(
+        road_closures=road,
+        evac_centres=SituationFeed(feed="evac_centres", available=False, detail="down"),
+        official_advice=SituationFeed(feed="official_advice", available=False, detail="down"),
+    )
+
+
+def test_publish_reads_situation_and_threads_it_into_the_board(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """publish reads the official situation and renders it into the board markdown."""
+    mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[])
+    mocker.patch("coordinator.canvas.audit_trail.list_events", return_value=[])
+    mocker.patch("coordinator.canvas.resolve_display_names", return_value={})
+    read = mocker.patch("coordinator.canvas.read_situation", return_value=_situation_snapshot())
+    client = _client(mocker, canvas_id="F_BOARD")
+
+    fresh_board.publish(client, USER_TOKEN)
+
+    read.assert_called_once()
+    markdown = client.canvases_create.call_args.kwargs["document_content"]["markdown"]
+    assert "## Situation" in markdown
+    assert "Minilya-Exmouth Road" in markdown
+
+
+def test_publish_renders_degraded_feed_line_when_a_source_is_down(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+) -> None:
+    """A down feed surfaces as an explicit unavailable line on the published board."""
+    mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[])
+    mocker.patch("coordinator.canvas.audit_trail.list_events", return_value=[])
+    mocker.patch("coordinator.canvas.resolve_display_names", return_value={})
+    mocker.patch(
+        "coordinator.canvas.read_situation",
+        return_value=_situation_snapshot(road_available=False),
+    )
+    client = _client(mocker, canvas_id="F_BOARD")
+
+    fresh_board.publish(client, USER_TOKEN)
+
+    markdown = client.canvases_create.call_args.kwargs["document_content"]["markdown"]
+    assert "road_closures" in markdown
+    assert "unavailable" in markdown.lower()
+
+
+def test_publish_swallows_situation_read_failure_and_omits_the_section(
+    fresh_board: CoordinatorBoard,
+    mocker: MockerFixture,
+    make_offer: Callable[..., Offer],
+) -> None:
+    """A situation-read failure degrades to no Situation section — board still updates.
+
+    ``read_situation`` is itself best-effort, but the publish path must not crash
+    even if it raised unexpectedly: the board still renders the cases + activity log,
+    just without a Situation section.
+    """
+    offer = make_offer(offerer="U_LIVE", resource_type="defibrillator")
+    mocker.patch("coordinator.canvas.offer_index.all_offers", return_value=[offer])
+    mocker.patch("coordinator.canvas.audit_trail.list_events", return_value=[])
+    mocker.patch("coordinator.canvas.resolve_display_names", return_value={})
+    mocker.patch("coordinator.canvas.read_situation", side_effect=RuntimeError("feeds_boom"))
+    client = _client(mocker, canvas_id="F_BOARD")
+
+    canvas_id = fresh_board.publish(client, USER_TOKEN)
+
+    assert canvas_id == "F_BOARD"
+    markdown = client.canvases_create.call_args.kwargs["document_content"]["markdown"]
+    assert "defibrillator" in markdown  # the board still composed
+    assert "## Situation" not in markdown  # but degraded to no situation section
+
+
 def test_update_board_helper_delegates_to_singleton_publish(
     mocker: MockerFixture,
 ) -> None:

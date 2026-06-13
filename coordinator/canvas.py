@@ -50,6 +50,7 @@ from coordinator import canvas_store
 from coordinator.announce import announce_board
 from coordinator.board import BOARD_TITLE, compose_board_markdown
 from coordinator.names import resolve_display_names
+from coordinator.situation import SituationSnapshot, read_situation
 from entities import Offer
 from matching.audit import AuditEvent, audit_trail
 from matching.index import offer_index
@@ -81,15 +82,34 @@ def _person_ids(offers: list[Offer], events: list[AuditEvent]) -> set[str]:
     return ids
 
 
+def _read_situation_best_effort() -> SituationSnapshot | None:
+    """Read the official situation for the board, swallowing any failure.
+
+    The impure fetch boundary for the Situation section (mirrors the names
+    boundary). :func:`coordinator.situation.read_situation` is itself best-effort
+    and already degrades a down feed to an explicit marker, but this wrapper also
+    catches an *unexpected* raise so a situation-read problem degrades to *no*
+    Situation section rather than breaking the board update — the
+    cases + activity log still publish.
+    """
+    try:
+        return read_situation()
+    except Exception as exc:
+        logger.warning("Situation read failed; board renders without it: %s", exc)
+        return None
+
+
 def _compose_with_names(client: WebClient, user_token: str) -> str:
-    """Compose the current board, resolving every person id to a display name.
+    """Compose the current board, resolving names and reading the official situation.
 
     The impure boundary the pure composer relies on: it snapshots the live
     offer-index + audit-trail state, best-effort resolves the people's display
     names via ``users.info`` (a canvas does not resolve ``<@id>`` mention syntax),
-    and threads the resulting ``{id: name}`` map into
-    :func:`compose_board_markdown`. A names-lookup failure is swallowed — the
-    board still composes with bare ids rather than breaking the refresh.
+    best-effort reads the official situation from the feeds, and threads both the
+    resulting ``{id: name}`` map and the :class:`SituationSnapshot` into
+    :func:`compose_board_markdown`. Either lookup failing is swallowed — the board
+    still composes (bare ids / no Situation section) rather than breaking the
+    refresh.
     """
     offers = offer_index.all_offers()
     events = audit_trail.list_events()
@@ -98,7 +118,8 @@ def _compose_with_names(client: WebClient, user_token: str) -> str:
     except Exception as exc:
         logger.warning("Display-name resolution failed; rendering bare ids: %s", exc)
         names = {}
-    return compose_board_markdown(offers, events, names)
+    situation = _read_situation_best_effort()
+    return compose_board_markdown(offers, events, names, situation)
 
 
 # The canvas write authenticates as the acting user (a canvases:write USER scope)

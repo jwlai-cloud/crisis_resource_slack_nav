@@ -13,6 +13,9 @@ Two layers:
   ``replace`` update against the Slack Canvas API, using the user token. Hooked
   into the action-button handlers *after* their work, isolated so a Canvas failure
   never breaks a click.
+* :mod:`coordinator.situation` — the impure read boundary for the official
+  situation (road closures / water points / evac centres) the publisher threads
+  into the pure composer's Situation section (task 020).
 
 The Canvas is the durable board (it survives a restart the in-memory index does
 not — ADR-0005); the index stays the fast path (ADR-0003).
@@ -21,13 +24,17 @@ not — ADR-0005); the index stays the fast path (ADR-0003).
 from coordinator.announce import announce_board, coordinator_channel_id
 from coordinator.board import BOARD_TITLE, compose_board_markdown
 from coordinator.canvas import CoordinatorBoard, coordinator_board, update_board
+from coordinator.situation import SituationFeed, SituationSnapshot, read_situation
 
 __all__ = [
     "BOARD_TITLE",
     "CoordinatorBoard",
+    "SituationFeed",
+    "SituationSnapshot",
     "announce_board",
     "compose_board_markdown",
     "coordinator_board",
     "coordinator_channel_id",
+    "read_situation",
     "update_board",
 ]

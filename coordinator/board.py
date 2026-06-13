@@ -27,8 +27,10 @@ Every guardrail the cards honour, the board honours too:
 
 from datetime import datetime
 
+from coordinator.situation import FeedRecord, SituationFeed, SituationSnapshot
 from entities import Offer, Status
 from matching.audit import AuditEvent
+from mocks.server import EvacCentre, RoadClosure
 
 # Title of the standalone canvas. Used both as the create-time title and as the
 # stable handle a coordinator looks for ("the Community Cases board").
@@ -64,6 +66,21 @@ _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
 # empty state, never a silently missing section.
 _NO_CASES = "_No cases yet._"
 _NO_ACTIVITY = "_No actions recorded yet._"
+
+# The Situation section: the current official picture (road closures / water
+# points / evac centres) read from the feeds. Each subsection has an h3 heading;
+# the section carries its own verify note because it relays *external* official
+# info (distinct from the board's standing record-of-actions note above).
+_SITUATION_HEADING = "## Situation — official sources"
+_SITUATION_VERIFY_NOTE = (
+    "_Relayed from official feeds, not advice. Always verify the current situation "
+    "with the official source before relying on it._"
+)
+_ROAD_CLOSURES_HEADING = "### Road closures"
+_EVAC_CENTRES_HEADING = "### Evacuation centres"
+_OFFICIAL_ADVICE_HEADING = "### Official advice"
+# Shown when an official feed has no records but did read successfully.
+_NO_SITUATION_RECORDS = "_No current entries._"
 
 
 def _format_ts(ts: datetime) -> str:
@@ -181,10 +198,82 @@ def _activity_section(
     return lines
 
 
+def _feed_stamp(feed: SituationFeed) -> str:
+    """The source label every situation row carries: feed name + fetched-at.
+
+    This is the sourcing guardrail in the Situation section — each entry names the
+    feed it came from and when that lookup ran (aware UTC), the same trust-critical
+    who/when the recall cards and case rows carry. A feed with no fetch stamp
+    (should not happen for an available feed) still renders its name.
+    """
+    if feed.fetched_at is None:
+        return f"_source: {feed.feed}_"
+    return f"_source: {feed.feed} · fetched {_format_ts(feed.fetched_at)}_"
+
+
+def _row_for(record: FeedRecord, feed: SituationFeed) -> str:
+    """Render one feed record as a feed-stamped Situation row, dispatched by type.
+
+    Each record type relays its own fields verbatim — the road's own status word,
+    the centre's occupancy + services (where a water point surfaces), the notice's
+    advice line — and carries the feed stamp. The board states what the feed says;
+    it never asserts of its own that a road is safe or okay to travel (guardrail 2).
+    """
+    stamp = _feed_stamp(feed)
+    if isinstance(record, RoadClosure):
+        return f"- *{record.road}* — {record.segment}: {record.status}. {record.reason} {stamp}"
+    if isinstance(record, EvacCentre):
+        services = ", ".join(record.services) if record.services else "—"
+        return (
+            f"- *{record.name}* ({record.address}) — {record.status}, "
+            f"{record.occupancy}/{record.capacity}. Services: {services} {stamp}"
+        )
+    return f"- *{record.title}* ({record.level}) — {record.advice} {stamp}"
+
+
+def _situation_subsection(heading: str, feed: SituationFeed) -> list[str]:
+    """One official-feed subsection: an h3 heading then a feed-stamped row per record.
+
+    A feed that is unavailable renders an explicit, *named* "feed unavailable" line
+    rather than being dropped (degraded-states guardrail 4) — a coordinator sees the
+    source is down, never a silently missing subsection. An available-but-empty feed
+    renders an explicit empty-state line.
+    """
+    lines = [heading]
+    if not feed.available:
+        detail = feed.detail or "No detail provided."
+        lines.append(f"- _Feed unavailable: {feed.feed} — {detail}_")
+        return lines
+    if not feed.records:
+        lines.append(_NO_SITUATION_RECORDS)
+        return lines
+    lines.extend(_row_for(record, feed) for record in feed.records)
+    return lines
+
+
+def _situation_section(situation: SituationSnapshot) -> list[str]:
+    """The Situation section: the official picture, each feed sourced or named-down.
+
+    Renders the section heading, its own verify note (it relays external official
+    info, distinct from the board's record-of-actions note), then a subsection per
+    official feed — road closures, evacuation centres, official advice (the last two
+    carrying water-point info in services / notices). Every present row is
+    feed-stamped; every down feed is named explicitly.
+    """
+    lines = [_SITUATION_HEADING, "", _SITUATION_VERIFY_NOTE, ""]
+    lines.extend(_situation_subsection(_ROAD_CLOSURES_HEADING, situation.road_closures))
+    lines.append("")
+    lines.extend(_situation_subsection(_EVAC_CENTRES_HEADING, situation.evac_centres))
+    lines.append("")
+    lines.extend(_situation_subsection(_OFFICIAL_ADVICE_HEADING, situation.official_advice))
+    return lines
+
+
 def compose_board_markdown(
     offers: list[Offer],
     events: list[AuditEvent],
     names: dict[str, str] | None = None,
+    situation: SituationSnapshot | None = None,
 ) -> str:
     """Render the full coordinator board as a Canvas ``markdown`` string.
 
@@ -204,6 +293,14 @@ def compose_board_markdown(
     when empty (explicit empty states), so a coordinator reading it after a restart
     — when the in-memory index is empty but the Canvas still holds the last board —
     sees a coherent, intentionally-empty board rather than a blank document.
+
+    ``situation`` is the current official picture (road closures / water points /
+    evac centres), read from the official feeds at the publisher's impure boundary
+    (:func:`coordinator.situation.read_situation`) and passed in so this stays pure.
+    When supplied it renders as a Situation section after the cases + activity log,
+    with every row feed-stamped (feed + fetched-at) and a verify note, and any down
+    feed named explicitly (guardrails 3/4). Omitted (``None``) — the default, so
+    existing callers are unchanged — no Situation section renders.
     """
     names = names or {}
     lines: list[str] = [f"# {BOARD_TITLE}", "", VERIFY_NOTE, ""]
@@ -211,4 +308,7 @@ def compose_board_markdown(
         lines.extend(_status_section(status, heading, offers, names))
         lines.append("")
     lines.extend(_activity_section(events, offers, names))
+    if situation is not None:
+        lines.append("")
+        lines.extend(_situation_section(situation))
     return "\n".join(lines).rstrip() + "\n"

@@ -12,8 +12,95 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from coordinator.board import BOARD_TITLE, VERIFY_NOTE, compose_board_markdown
+from coordinator.situation import SituationFeed, SituationSnapshot
 from entities import Offer, Status
 from matching.audit import AuditEvent
+from mocks.server import EvacCentre, OfficialAdvice, RoadClosure
+
+SITUATION_FETCHED_AT = datetime(2026, 3, 15, 6, 30, tzinfo=UTC)
+SITUATION_UPDATED_AT = datetime(2026, 3, 15, 5, 30, tzinfo=UTC)
+
+
+def _road_feed(*, available: bool = True) -> SituationFeed:
+    """An available road-closures feed with one Narelle closure, or a down marker."""
+    if not available:
+        return SituationFeed(
+            feed="road_closures",
+            available=False,
+            detail="The road_closures feed is unavailable (simulated outage).",
+        )
+    return SituationFeed(
+        feed="road_closures",
+        available=True,
+        fetched_at=SITUATION_FETCHED_AT,
+        records=(
+            RoadClosure(
+                road="Minilya-Exmouth Road",
+                segment="Yannarie River crossing",
+                status="CLOSED",
+                reason="Floodwater over road.",
+                detour="No detour available.",
+                updated_at=SITUATION_UPDATED_AT,
+            ),
+        ),
+    )
+
+
+def _evac_feed(*, available: bool = True) -> SituationFeed:
+    """An available evac-centres feed with a water-point centre, or a down marker."""
+    if not available:
+        return SituationFeed(feed="evac_centres", available=False, detail="evac unavailable")
+    return SituationFeed(
+        feed="evac_centres",
+        available=True,
+        fetched_at=SITUATION_FETCHED_AT,
+        records=(
+            EvacCentre(
+                name="Exmouth Recreation Centre",
+                address="Murat Road, Exmouth WA 6707",
+                status="OPEN",
+                capacity=250,
+                occupancy=168,
+                services=["Emergency water point", "Bedding and shelter"],
+                updated_at=SITUATION_UPDATED_AT,
+            ),
+        ),
+    )
+
+
+def _advice_feed(*, available: bool = True) -> SituationFeed:
+    """An available official-advice feed with a water-point notice, or a down marker."""
+    if not available:
+        return SituationFeed(feed="official_advice", available=False, detail="advice unavailable")
+    return SituationFeed(
+        feed="official_advice",
+        available=True,
+        fetched_at=SITUATION_FETCHED_AT,
+        records=(
+            OfficialAdvice(
+                title="Emergency water point now open",
+                level="Advice",
+                area="Exmouth",
+                message="An emergency drinking-water point is operating at the Rec Centre.",
+                advice="Collect drinking water from the Recreation Centre water point.",
+                updated_at=SITUATION_UPDATED_AT,
+            ),
+        ),
+    )
+
+
+def _situation(
+    *,
+    road: bool = True,
+    evac: bool = True,
+    advice: bool = True,
+) -> SituationSnapshot:
+    """A SituationSnapshot whose feeds are available or down per the flags."""
+    return SituationSnapshot(
+        road_closures=_road_feed(available=road),
+        evac_centres=_evac_feed(available=evac),
+        official_advice=_advice_feed(available=advice),
+    )
 
 
 def test_empty_board_renders_every_heading_and_empty_states() -> None:
@@ -287,3 +374,117 @@ def test_activity_line_actor_renders_display_name(
 
     assert "Dana Lee" in markdown
     assert "<@U_ACTOR>" not in markdown
+
+
+# --- Situation section from the official feeds (task 020) --------------------
+
+
+def test_situation_param_is_optional_and_omits_the_section() -> None:
+    """With no situation passed (existing callers), no Situation section renders.
+
+    Backward-compat guard for the 017/019 board tests: the composer signature gains
+    an optional ``situation`` param defaulting to None, and a None situation leaves
+    the board exactly as before.
+    """
+    markdown = compose_board_markdown([], [])
+
+    assert "## Situation" not in markdown
+
+
+def test_situation_section_renders_each_official_feed() -> None:
+    """A situation snapshot renders road closures, evac centres, and advice."""
+    markdown = compose_board_markdown([], [], situation=_situation())
+
+    assert "## Situation" in markdown
+    # Road closure relayed verbatim from the feed (no safety assertion of our own).
+    assert "Minilya-Exmouth Road" in markdown
+    assert "Yannarie River crossing" in markdown
+    # Evac centre + its water-point service.
+    assert "Exmouth Recreation Centre" in markdown
+    assert "Emergency water point" in markdown
+    # Advice notice surfaced (water point pointer).
+    assert "Emergency water point now open" in markdown
+
+
+def test_situation_rows_carry_feed_and_fetched_at_stamp() -> None:
+    """Every situation row is feed-stamped: feed name + fetched-at (guardrail 3)."""
+    markdown = compose_board_markdown([], [], situation=_situation())
+
+    # The feed names appear as on-screen source labels.
+    assert "road_closures" in markdown
+    assert "evac_centres" in markdown
+    assert "official_advice" in markdown
+    # The fetched-at stamp is rendered (the lookup time, aware UTC).
+    assert "2026-03-15 06:30 UTC" in markdown
+
+
+def test_situation_section_carries_a_verify_note() -> None:
+    """The Situation section carries the verify-before-relying note (guardrail 4)."""
+    markdown = compose_board_markdown([], [], situation=_situation())
+
+    situation_block = markdown.split("## Situation", 1)[1]
+    assert "verify" in situation_block.lower()
+
+
+def test_down_feed_renders_explicit_unavailable_line_not_silence() -> None:
+    """A feed that is down renders an explicit 'unavailable' line, named — never silence."""
+    markdown = compose_board_markdown([], [], situation=_situation(road=False))
+
+    assert "## Situation" in markdown
+    # The degraded source is named explicitly (guardrail 4), not dropped.
+    assert "road_closures" in markdown
+    lowered = markdown.lower()
+    assert "unavailable" in lowered
+    # The other feeds still render their data.
+    assert "Exmouth Recreation Centre" in markdown
+
+
+def test_all_feeds_down_renders_three_unavailable_lines() -> None:
+    """Every feed down still shows the section with all three sources named as down."""
+    markdown = compose_board_markdown(
+        [], [], situation=_situation(road=False, evac=False, advice=False)
+    )
+
+    assert "## Situation" in markdown
+    assert "road_closures" in markdown
+    assert "evac_centres" in markdown
+    assert "official_advice" in markdown
+    assert markdown.lower().count("unavailable") >= 3
+
+
+def test_situation_section_never_asserts_safety() -> None:
+    """The Situation section relays official info — it never asserts it is safe."""
+    markdown = compose_board_markdown([], [], situation=_situation())
+
+    situation_block = markdown.split("## Situation", 1)[1].lower()
+    assert "is safe" not in situation_block
+    assert "safe to travel" not in situation_block
+    assert "okay to travel" not in situation_block
+
+
+def test_situation_section_renders_after_the_cases_and_activity(
+    make_offer: Callable[..., Offer],
+) -> None:
+    """The Situation section reads after the case sections (official picture last)."""
+    markdown = compose_board_markdown([make_offer()], [], situation=_situation())
+
+    assert markdown.index("## Open") < markdown.index("## Situation")
+
+
+def test_situation_does_not_disturb_existing_board_sections(
+    make_offer: Callable[..., Offer],
+) -> None:
+    """Adding a situation leaves the case + activity sections intact."""
+    markdown = compose_board_markdown([make_offer()], [], situation=_situation())
+
+    assert "## Open (1)" in markdown
+    assert "## Activity log" in markdown
+    assert VERIFY_NOTE in markdown
+
+
+def test_situation_output_still_ends_with_single_trailing_newline() -> None:
+    """A board with a situation section is still a clean single-trailing-newline string."""
+    markdown = compose_board_markdown([], [], situation=_situation())
+
+    assert markdown.endswith("\n")
+    assert not markdown.endswith("\n\n")
