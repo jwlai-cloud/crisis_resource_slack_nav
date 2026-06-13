@@ -5,7 +5,20 @@
   "features": {
     "assistant_view": {
       "assistant_description": "Describe what you need in plain language - I surface matching local offers and official updates from this workspace, each with source and timestamp. You confirm every match; verify details before relying on them.",
-      "suggested_prompts": []
+      "suggested_prompts": [
+        {
+          "title": "Ask for help you need",
+          "message": "Family of 4 in North Exmouth, no power - we need drinking water and a generator."
+        },
+        {
+          "title": "Offer something you have",
+          "message": "I can offer a spare room in Exmouth town for someone who needs shelter."
+        },
+        {
+          "title": "Check a road or official update",
+          "message": "Is the road to Learmonth open right now?"
+        }
+      ]
     },
     "app_home": {
       "home_tab_enabled": true,
