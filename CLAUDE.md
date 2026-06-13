@@ -129,6 +129,7 @@ Opinionated agent-team workflow in two modes. Canonical lifecycle and rules live
 | `make ci` | Full pre-PR fan: install → format/lint checks → tests. |
 | `make run` | `slack run` against the sandbox. |
 | `make board` | (Re)create the coordinator board Canvas on demand (`scripts/open_board.py`) — mints it, **persists its id** to the gitignored `.slack/board_canvas_id`, and **announces** the link once to `COORDINATOR_CHANNEL` (if set). Needs `SLACK_USER_TOKEN` (user `canvases:write`). The running agent's first board refresh reads that same id file and *edits* this canvas (no duplicate); it then auto-refreshes on every Connect / Resolve / Dismiss (task 017/018, ADR-0005). |
+| `make seed-demo` | Seed the Cyclone Narelle / Exmouth scenario into `CRISIS_CHANNEL` for the demo (`scripts/seed_demo.py`) — believable offers + SES/DFES notices + chatter, posted via `SLACK_USER_TOKEN` (needs user `chat:write` + `channels:history`). **Idempotent**: every message carries a `·crn-seed` marker; a re-run scans recent history and skips what's already there (no duplicates). `make seed-demo ARGS=--fresh` deletes the prior seed (marked messages only) and re-seeds clean. Offers are posted as the **operator** (no persona tokens) and become **RTS-matchable ~1 min after seeding** — seed, wait ~60s, *then* post a need (task 013). |
 
 > **Manual QA order:** `format-fix → lint-fix → format-check → lint-check → pre-commit → unit-tests`. Fixers before checkers. CI runs the non-fix variants only.
 
@@ -138,7 +139,7 @@ Slack CLI (v4.2.0, installed at `~/.local/bin/slack`):
 - `slack auth list` — verify auth. Logged into the `crisis-resource-nav` sandbox org (Team `E0B9Z77AX2R`).
 - `slack manifest validate` — check `manifest.json` after editing scopes/events.
 - `.env` needs `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) — pydantic-ai picks the model in `agent/agent.py:get_model()`.
-- `CRISIS_CHANNEL` (optional, channel id; empty/unset = off) — enables passive listening (parse every top-level message, ack offers / answer needs) in that one channel only; everywhere else stays mention-gated (ADR-0004).
+- `CRISIS_CHANNEL` (optional, channel id; empty/unset = off) — enables passive listening (parse every top-level message, ack offers / answer needs) in that one channel only; everywhere else stays mention-gated (ADR-0004). Also the channel `make seed-demo` seeds the demo scenario into (task 013).
 - `COORDINATOR_CHANNEL` (optional, channel id; empty/unset = off) — when the coordinator board Canvas is first created, its link is posted once to this channel so a coordinator can open it (task 018, ADR-0005). Announce-on-create only; never re-posted on edits. Same one-channel + restart pattern as `CRISIS_CHANNEL`.
 
 ## Step-by-Step Verification
