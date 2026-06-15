@@ -19,6 +19,34 @@ deploy/deploy.sh [gce|fly]  # default: gce
 > up through the judges' review window, then tear it down. Standing it up a month
 > early just burns idle cost.
 
+## How the sandbox connects to the deployed agent
+
+It doesn't — **the agent connects out to Slack**, not the other way around. There is
+no inbound URL to configure and nothing to re-point in the sandbox:
+
+1. On the VM/Fly, `app.py` starts and `SocketModeHandler` calls `apps.connections.open`
+   using `SLACK_APP_TOKEN` (the `xapp-…`, `connections:write` scope).
+2. Slack returns a `wss://…` URL; the agent holds a **persistent outbound WebSocket**.
+3. Slack **pushes every sandbox event down that socket** — to wherever the agent runs.
+
+Deploying = running the **same `app.py` with the same tokens**, just on the VM instead
+of your laptop. The app (already installed in the sandbox) is untouched; the socket is
+the link. `deploy/.env.deploy` carries the tokens up.
+
+### ⚠ Only ONE instance at a time
+
+Two processes sharing the same app token open two sockets, and Slack then
+**duplicates / splits events** (double replies, dropped messages). So:
+
+- **When the VM goes live, stop the local `slack run`** (`pkill -f "slack run"`). The
+  VM becomes the sole agent.
+- **To test locally again,** stop the VM (`gcloud compute instances stop …`) or scale
+  Fly to 0 (`fly scale count 0`), then `slack run`.
+
+**Verify after deploy:** post a need in `#exmouth-mutual-aid` → a reply means the
+deployed agent is live. No reply → check the container logs (`gcloud compute ssh … --
+'sudo docker logs $(sudo docker ps -q)'` or `fly logs`) and that every secret is set.
+
 ## Secrets (both targets)
 
 Copy the template and fill in real values — **never commit `deploy/.env.deploy`** (it's
