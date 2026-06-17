@@ -250,6 +250,13 @@ def _mock_mcp_server() -> MCPServerStdio:
         command=sys.executable,
         args=["-m", "mocks.server"],
         cwd=str(_REPO_ROOT),
+        # The subprocess cold-imports FastMCP per run; on a constrained host (e.g. a
+        # free-tier GCE e2-micro, ~0.25 vCPU baseline) that import measured ~12s, well
+        # past the 5s default init timeout — which surfaced as an MCP handshake
+        # BrokenResourceError that aborted the whole reply. 30s clears the cold start
+        # with headroom; locally the import is sub-second so this never bites. (A
+        # persistent HTTP transport would avoid the per-run spawn entirely — future work.)
+        timeout=30,
     )
 
 

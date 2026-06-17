@@ -82,8 +82,10 @@ deploy_gce() {
   local proj=(); [ -n "$GCE_PROJECT" ] && proj=(--project "$GCE_PROJECT")
   local container_env; container_env="$(env_pairs | paste -sd, -)"
 
-  echo ">> Building + pushing $GCE_IMAGE …"
-  docker build -t "$GCE_IMAGE" "$REPO_ROOT"
+  echo ">> Building + pushing $GCE_IMAGE (linux/amd64 — GCE VMs are x86_64) …"
+  # --platform linux/amd64: the build host may be arm64 (Apple Silicon) but GCE
+  # e2-micro is x86_64; without this the container crash-loops on "exec format error".
+  docker build --platform linux/amd64 -t "$GCE_IMAGE" "$REPO_ROOT"
   docker push "$GCE_IMAGE"
 
   if gcloud compute instances describe "$GCE_INSTANCE" --zone "$GCE_ZONE" "${proj[@]}" >/dev/null 2>&1; then

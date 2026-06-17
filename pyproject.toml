@@ -15,7 +15,7 @@ dependencies = [
     "slack-sdk>=3.42",
     "slack-bolt>=1.28",
     "slack-cli-hooks<1.0.0",
-    "pydantic-ai[anthropic,openai]",
+    "pydantic-ai-slim[anthropic,openai,google]",
     "python-dotenv>=1.2",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
