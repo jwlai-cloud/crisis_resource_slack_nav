@@ -16,7 +16,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
+from pytest_mock import MockerFixture
 
+import mocks.server as server_module
 from mocks.server import (
     FEEDS,
     EvacCentre,
@@ -167,6 +169,52 @@ def test_evac_centre_records_carry_capacity_and_water_point() -> None:
     rec_centre = next(r for r in result.records if "Recreation Centre" in r.name)
     assert rec_centre.capacity > 0
     assert any("water" in service.lower() for service in rec_centre.services)
+
+
+# --- Transport selection (task 034): HTTP when MOCK_MCP_HTTP_PORT is set, else stdio --
+#
+# ``_run`` never actually starts a server here — ``mcp.run`` is patched to capture the
+# transport it was asked for, so the test is fast and binds no port.
+
+
+def test_run_uses_http_transport_when_port_set(
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MOCK_MCP_HTTP_PORT set -> mcp.run(transport='http', host=127.0.0.1, port=...)."""
+    monkeypatch.setenv("MOCK_MCP_HTTP_PORT", "8765")
+    run = mocker.patch.object(server_module.mcp, "run")
+
+    server_module._run()
+
+    run.assert_called_once_with(transport="http", host="127.0.0.1", port=8765, show_banner=False)
+
+
+def test_run_uses_stdio_transport_by_default(
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No MOCK_MCP_HTTP_PORT -> stdio default (mcp.run with no transport)."""
+    monkeypatch.delenv("MOCK_MCP_HTTP_PORT", raising=False)
+    run = mocker.patch.object(server_module.mcp, "run")
+
+    server_module._run()
+
+    run.assert_called_once_with(show_banner=False)
+
+
+def test_run_http_port_is_coerced_to_int(
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The env port (a string) is passed to mcp.run as an int."""
+    monkeypatch.setenv("MOCK_MCP_HTTP_PORT", "9001")
+    run = mocker.patch.object(server_module.mcp, "run")
+
+    server_module._run()
+
+    assert run.call_args.kwargs["port"] == 9001
+    assert isinstance(run.call_args.kwargs["port"], int)
 
 
 def test_record_updated_at_is_naive_rejected() -> None:

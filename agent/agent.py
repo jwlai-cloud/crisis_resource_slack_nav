@@ -232,30 +232,44 @@ def get_model() -> "str | Model":
 
 SLACK_MCP_URL = "https://mcp.slack.com/mcp"
 
+# The MCP server toolset types this run attaches (Slack MCP + the mock directories).
+# Used to identify which toolsets to drop on the graceful-degradation retry (task 034)
+# — a connection/enter failure of one of these must degrade, not crash the reply.
+_MCP_TOOLSET_TYPES = (MCPServerStdio, MCPServerStreamableHTTP)
+
 # Repo root — the cwd the mock-MCP subprocess runs from so `-m mocks.server`
 # resolves regardless of where the Slack CLI launches the app.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _mock_mcp_server() -> MCPServerStdio:
-    """The mock official-directories MCP server, attached as a stdio subprocess.
+def _mock_mcp_server() -> MCPServerStdio | MCPServerStreamableHTTP:
+    """The mock official-directories MCP server toolset, transport chosen by env (task 034).
 
-    pydantic-ai launches and tears down ``python -m mocks.server`` around each
-    run, so there is no second process or port to manage under `slack run`
-    (transport choice documented in the task log / mocks/server.py). The same
-    interpreter that runs the app runs the subprocess, so it always uses the
-    project's locked deps.
+    Two transports, same server (mocks/server.py):
+
+    * **Persistent HTTP** (``MOCK_MCP_URL`` set — the deployed container path). The
+      container's entrypoint starts ``python -m mocks.server`` once over HTTP and the
+      agent connects to that long-lived server via ``MCPServerStreamableHTTP`` — same
+      shape as the Slack MCP integration. FastMCP is imported once at container start
+      and stays warm, so each reply skips the ~5-12s cold subprocess spawn that hung
+      replies on the constrained e2-micro.
+    * **Stdio subprocess** (no ``MOCK_MCP_URL`` — local `slack run`, zero-config).
+      pydantic-ai launches and tears down ``python -m mocks.server`` around each run;
+      the same interpreter that runs the app runs the subprocess, so it always uses
+      the project's locked deps. The cold import on a constrained host measured ~12s,
+      past the 5s default init timeout (an MCP handshake ``BrokenResourceError`` that
+      aborted the reply), so the stdio path keeps the 30s init headroom; locally the
+      import is sub-second so it never bites.
     """
+    mock_url = os.environ.get("MOCK_MCP_URL")
+    if mock_url:
+        logger.info("Mock official-directories MCP server over HTTP: %s", mock_url)
+        return MCPServerStreamableHTTP(mock_url)
+
     return MCPServerStdio(
         command=sys.executable,
         args=["-m", "mocks.server"],
         cwd=str(_REPO_ROOT),
-        # The subprocess cold-imports FastMCP per run; on a constrained host (e.g. a
-        # free-tier GCE e2-micro, ~0.25 vCPU baseline) that import measured ~12s, well
-        # past the 5s default init timeout — which surfaced as an MCP handshake
-        # BrokenResourceError that aborted the whole reply. 30s clears the cold start
-        # with headroom; locally the import is sub-second so this never bites. (A
-        # persistent HTTP transport would avoid the per-run spawn entirely — future work.)
         timeout=30,
     )
 
@@ -306,10 +320,50 @@ def run_agent(text, deps, message_history=None, recall_context=None):
         logger.info("Mock official-directories MCP server enabled")
         toolsets.append(_mock_mcp_server())
 
-    return agent.run_sync(
-        prompt,
-        model=get_model(),
-        deps=deps,
-        message_history=message_history,
-        toolsets=toolsets,
-    )
+    return _run_with_mcp_degradation(prompt, deps, message_history, toolsets)
+
+
+def _run_with_mcp_degradation(prompt, deps, message_history, toolsets):
+    """Run the agent, degrading gracefully if an MCP toolset can't be reached (task 034).
+
+    The degraded-states guardrail: a flaky external source must degrade, NOT take the
+    agent down. An MCP toolset that fails to connect or enter (the prod hang's shape —
+    a cold mock-server spawn past the init timeout surfaced as a handshake
+    ``BrokenResourceError``) used to raise straight out of the run and the reply never
+    landed. Here we catch any failure from the run, and — when MCP toolsets were in
+    play — retry **once** without them so the prose still composes. The official
+    *cards* come from the direct ``read_situation`` path (recall_reply), not these
+    toolsets, so they render regardless; and a degraded source is announced to the
+    resident by that path's degraded notice, never silently dropped.
+
+    The retry is a single bounded fallback, not a swallow-all: if there were no MCP
+    toolsets to drop (so the failure is unrelated to MCP), or the toolset-free retry
+    *also* fails, the error propagates to the listener's own error handling rather
+    than being hidden.
+    """
+    try:
+        return agent.run_sync(
+            prompt,
+            model=get_model(),
+            deps=deps,
+            message_history=message_history,
+            toolsets=toolsets,
+        )
+    except Exception as exc:
+        mcp_toolsets = [t for t in toolsets if isinstance(t, _MCP_TOOLSET_TYPES)]
+        if not mcp_toolsets:
+            raise
+        remaining = [t for t in toolsets if t not in mcp_toolsets]
+        logger.warning(
+            "Agent run failed with %d MCP toolset(s) attached (%s); retrying once "
+            "without them so the reply still composes (degraded-states guardrail).",
+            len(mcp_toolsets),
+            exc,
+        )
+        return agent.run_sync(
+            prompt,
+            model=get_model(),
+            deps=deps,
+            message_history=message_history,
+            toolsets=remaining,
+        )

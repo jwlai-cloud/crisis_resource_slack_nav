@@ -1,10 +1,14 @@
 # Crisis Resource Navigator — always-on socket-mode worker image (multi-stage).
 #
 # Socket mode opens an OUTBOUND websocket to Slack (no inbound HTTP), so this is a
-# long-running worker — no port to EXPOSE, no health endpoint. The same interpreter
-# that runs app.py also spawns `python -m mocks.server` as a stdio MCP subprocess
-# (agent/agent.py:_mock_mcp_server), so the WHOLE repo + the locked runtime venv must
-# be present. Deploy targets: Fly.io or a GCE e2-micro (see deploy/README.md).
+# long-running worker — no port to EXPOSE, no health endpoint. The container runs the
+# mock official-directories MCP server PERSISTENTLY over HTTP on localhost (started by
+# deploy/entrypoint.sh) and app.py connects to it via MCPServerStreamableHTTP — so the
+# FastMCP import happens once at startup and every reply reaches a warm server, instead
+# of paying a ~5-12s cold subprocess spawn per reply on the constrained e2-micro (task
+# 034). The WHOLE repo + the locked runtime venv must still be present (the entrypoint
+# runs `python -m mocks.server`). Deploy targets: Fly.io or a GCE e2-micro (see
+# deploy/README.md).
 #
 # Two stages keep the runtime small: the builder owns uv + the build, the runtime
 # carries only the resolved venv + the source. This drops the uv binary, the apt
@@ -41,7 +45,9 @@ COPY --chown=crn:crn . .
 
 USER crn
 
-# Socket-mode entry point: the venv's python (on PATH) execs app.py, which opens the
-# Slack websocket via SocketModeHandler.start(). No `uv run` at runtime — the env is
-# already baked, and the mock-MCP subprocess uses this same interpreter (sys.executable).
-CMD ["python", "app.py"]
+# Entrypoint: start the persistent mock MCP server over HTTP, wait for it to bind,
+# export MOCK_MCP_URL, then exec app.py (which opens the Slack websocket via
+# SocketModeHandler.start()). No `uv run` at runtime — the env is already baked, and
+# both processes use the venv's python (on PATH). Local `slack run` does NOT use this
+# entrypoint, so it stays on the zero-config stdio mock (no MOCK_MCP_URL set).
+CMD ["/app/deploy/entrypoint.sh"]

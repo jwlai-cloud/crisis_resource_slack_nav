@@ -61,7 +61,9 @@ from recall import (
     RecallError,
     RecallMatch,
     build_official_blocks,
+    build_official_unavailable_blocks,
     build_recall_blocks,
+    is_official_fully_unavailable,
     rank_matches,
     recall_offers,
     tokenize,
@@ -116,6 +118,19 @@ _OFFICIAL_CARDS_CONTEXT_NOTE = (
     "reply, each carrying its feed name, fetched-at timestamp, and the verify note. "
     "You may reference them in plain prose, but do not re-list their full "
     "feed/fetched-at source lines — the cards carry the sourcing."
+)
+
+# Threaded into an INFORMATION need's context (task 034, Part C) when official info is
+# FULLY unavailable — the situation read failed entirely, or every relevant official
+# feed is down. The prose must then say so plainly and refuse to judge current
+# conditions, not imply a complete answer. Never assert safety; never invent a status.
+_OFFICIAL_UNAVAILABLE_CONTEXT_NOTE = (
+    "\n\nIMPORTANT — the official directories are UNREACHABLE for this turn: I could "
+    "not retrieve any current official information. Tell the resident plainly that you "
+    "could not reach the official sources and therefore cannot give current road or "
+    "official conditions, and that they must verify directly with the official source. "
+    "Do NOT assert that any road or travel is safe, and do NOT invent or guess any "
+    "status, closure, centre, or advice to fill the gap."
 )
 
 # Jaccard similarity at/above which an index hit and an RTS hit FROM THE SAME
@@ -199,6 +214,40 @@ def _official_blocks_best_effort(need: Need) -> list[Block]:
     if situation is None:
         return []
     return build_official_blocks(need, situation)
+
+
+def _info_need_official_content(need: Need) -> tuple[list[Block], str]:
+    """Official cards + context for an INFORMATION need, degrading loudly (task 034 C).
+
+    For an information need the official items ARE the answer, so a degraded official
+    picture must be stated explicitly — never silent, never an implied-complete reply
+    (guardrail 4). Returns the structured ``blocks`` and the context suffix to append
+    to the info-need ``llm_context``:
+
+    * **Situation read failed entirely** (no snapshot) -> the explicit
+      :func:`recall.build_official_unavailable_blocks` alert card + the
+      :data:`_OFFICIAL_UNAVAILABLE_CONTEXT_NOTE` so the prose says so plainly.
+    * **Every relevant feed down** (a snapshot, but no available relevant record) ->
+      the composer's per-feed unavailable cards + the whole-path alert (in ``blocks``),
+      plus the same context note so the prose matches.
+    * **Otherwise** (live official items, or simply nothing relevant) -> the normal
+      cards (or none) and no degraded note.
+
+    The alert never asserts safety and never invents a status — it only states the gap
+    and points the resident to verify directly.
+    """
+    situation = _read_situation_best_effort()
+    if situation is None:
+        # Wholesale read failure: no snapshot to render per-feed cards from, so render
+        # the explicit whole-path alert rather than going silent.
+        return build_official_unavailable_blocks(need), _OFFICIAL_UNAVAILABLE_CONTEXT_NOTE
+
+    blocks = build_official_blocks(need, situation)
+    if is_official_fully_unavailable(need, situation):
+        # Blocks already carry the per-feed cards + the whole-path alert; the prose
+        # needs the matching steer so it doesn't imply a complete answer.
+        return blocks, _OFFICIAL_UNAVAILABLE_CONTEXT_NOTE
+    return blocks, ""
 
 
 def _post_offer_ack(
@@ -462,17 +511,21 @@ def route_message(
     # back an official-only context (task 030). The relevant official feed items ARE
     # the structured content here: we render them as sourced cards (task 028), so the
     # blocks are the official section (no workspace match cards, no Connect button).
+    # When official info is FULLY unavailable (read failed, or every relevant feed
+    # down), the blocks carry an explicit alert and the context steers the prose to
+    # say so plainly — never silent, never implied-complete (task 034, Part C).
     if need.is_information:
         logger.info(
             "Information need (official-only, no offer-recall): %s in %s",
             need.need_type,
             need.location,
         )
+        official_blocks, degraded_note = _info_need_official_content(need)
         return NeedRecall(
             need=need,
             result=[],
-            blocks=_official_blocks_best_effort(need),
-            llm_context=_INFORMATION_NEED_CONTEXT,
+            blocks=official_blocks,
+            llm_context=_INFORMATION_NEED_CONTEXT + degraded_note,
         )
 
     rts_result = asyncio.run(

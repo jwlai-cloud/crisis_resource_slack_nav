@@ -124,9 +124,39 @@ restart-on-crash).
 
 ---
 
+## Mock MCP server: persistent HTTP in the container
+
+The mock official-directories MCP server (`mocks/server.py`) used to be spawned **per
+reply** over stdio. On the constrained free-tier e2-micro the cold FastMCP import
+(~5–12s) blew past the MCP init timeout and **hung the reply**. In the container the
+`entrypoint.sh` instead runs it **persistently over HTTP on localhost** and points the
+agent at it, so the import happens **once at startup** and every reply hits a warm
+server (task 034):
+
+1. `entrypoint.sh` sets `MOCK_MCP_HTTP_PORT` and starts `python -m mocks.server` in the
+   background (it serves `transport="http"` on `127.0.0.1:<port>`).
+2. It waits for the port to bind, then exports `MOCK_MCP_URL=http://127.0.0.1:<port>/mcp`.
+3. It `exec`s `app.py`; `agent/agent.py` connects to that URL via
+   `MCPServerStreamableHTTP` (same shape as the Slack MCP integration).
+
+It's all automatic — **you don't set `MOCK_MCP_HTTP_PORT` / `MOCK_MCP_URL` yourself**.
+Localhost only: there's no inbound port to the box (socket mode is an outbound
+websocket). Local `slack run` is **unchanged** — it never uses this entrypoint, so it
+stays on the zero-config stdio mock.
+
+A flaky MCP source also no longer takes a reply down: if an MCP toolset can't be
+reached the agent retries once without it and still composes the reply, and the
+official cards (read directly, not via the toolset) still render — with an explicit
+"couldn't reach the official directories" alert when the official picture is fully
+unavailable.
+
 ## Files
 - `../Dockerfile` / `../.dockerignore` — the shared worker image (uv, `--frozen --no-dev`,
-  non-root; copies the whole repo so the `python -m mocks.server` MCP subprocess runs).
+  non-root; copies the whole repo so `python -m mocks.server` runs). Runtime `CMD` is
+  `entrypoint.sh`.
+- `entrypoint.sh` — container entrypoint (task 034): starts the persistent HTTP mock
+  MCP server, waits for it to bind, then execs `app.py`. The only `deploy/` file baked
+  into the image.
 - `deploy.sh` — the entry point (default `gce`); validates target + secrets, routes.
 - `fly.toml` — Fly worker config.
 - `gce-startup.sh` — best-effort swap on the GCE host.

@@ -40,8 +40,12 @@ docs/
 !.env.example
 deploy/.env.deploy
 
-# The deploy artifacts themselves don't belong inside the image.
-deploy/
+# The deploy artifacts themselves don't belong inside the image — EXCEPT the
+# container entrypoint (task 034), which the runtime CMD runs from /app/deploy/.
+# `deploy/*` (not `deploy/`) excludes the dir's contents while still allowing the
+# negation below to re-include one file; deploy/.env.deploy stays excluded (above).
+deploy/*
+!deploy/entrypoint.sh
 Dockerfile
 .dockerignore
 

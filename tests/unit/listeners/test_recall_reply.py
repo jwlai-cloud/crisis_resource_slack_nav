@@ -772,6 +772,7 @@ def test_offer_indexing_refreshes_the_board(mocker: MockerFixture) -> None:
 
 from coordinator.situation import SituationFeed, SituationSnapshot  # noqa: E402
 from mocks.server import EvacCentre, RoadClosure  # noqa: E402
+from recall.official_blocks import OFFICIAL_UNAVAILABLE_ALERT  # noqa: E402
 
 _OFFICIAL_FETCHED_AT = datetime(2026, 3, 15, 6, 30, tzinfo=UTC)
 _OFFICIAL_UPDATED_AT = datetime(2026, 3, 15, 5, 30, tzinfo=UTC)
@@ -1035,8 +1036,14 @@ def test_situation_read_failure_does_not_break_the_need_reply(mocker: MockerFixt
     assert "Official information" not in text
 
 
-def test_info_need_situation_read_failure_yields_no_blocks(mocker: MockerFixture) -> None:
-    """AC6: an info need whose situation read fails degrades to empty blocks (prose still leads)."""
+def test_info_need_situation_read_failure_renders_explicit_alert(mocker: MockerFixture) -> None:
+    """AC4 (task 034): an info need whose situation read fails renders the explicit alert.
+
+    Supersedes the old "degrade to empty blocks" behaviour: for an info need (official
+    info IS the answer), a wholesale read failure must NOT go silent or imply a complete
+    answer — it carries the loud user-facing "couldn't reach the official directories"
+    alert as a block, and threads it into the llm_context too. Never asserts safety.
+    """
     mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
     mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
     mocker.patch.object(recall_reply, "offer_index", OfferIndex())
@@ -1046,5 +1053,60 @@ def test_info_need_situation_read_failure_yields_no_blocks(mocker: MockerFixture
     outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
 
     assert isinstance(outcome, NeedRecall)
-    assert outcome.blocks == []  # no official cards; the LLM prose still answers
+    block_text = _block_text(outcome.blocks)
+    assert OFFICIAL_UNAVAILABLE_ALERT in block_text  # loud, not silent
+    assert "Official information" in block_text  # under the standing header
+    # No action buttons on the degraded alert (info-only, guardrail 1).
+    assert all(b.to_dict()["type"] != "actions" for b in outcome.blocks)
+    # The llm_context tells the model the official picture is unreachable.
+    ctx = outcome.llm_context.lower()
+    assert "could" in ctx and "official" in ctx
+    assert "verify" in ctx
+    # Never asserts safety in either surface.
+    combined = (block_text + outcome.llm_context).lower()
+    assert "safe to travel" not in combined
+    assert "okay to travel" not in combined
     say.assert_not_called()
+
+
+def test_info_need_all_relevant_feeds_down_threads_alert_into_context(
+    mocker: MockerFixture,
+) -> None:
+    """AC4 (task 034): all relevant feeds down -> the alert is threaded into the llm_context.
+
+    The blocks already carry the per-feed unavailable card + the whole-path alert
+    (build_official_blocks); the context must ALSO tell the model the official picture
+    is unreachable so its prose says so plainly instead of implying a complete answer.
+    """
+    mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    down = _situation(_road_feed(available=False, detail="Simulated outage."), _evac_feed())
+    mocker.patch.object(recall_reply, "read_situation", return_value=down)
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    block_text = _block_text(outcome.blocks)
+    assert OFFICIAL_UNAVAILABLE_ALERT in block_text
+    ctx = outcome.llm_context.lower()
+    assert "could" in ctx and "official" in ctx
+    assert "verify" in ctx
+
+
+def test_info_need_available_feed_does_not_thread_the_alert(mocker: MockerFixture) -> None:
+    """A working info need carries NO degraded alert in either blocks or context."""
+    mocker.patch.object(recall_reply, "parse_message", return_value=_road_info_need())
+    mocker.patch.object(recall_reply, "recall_offers", new=mocker.AsyncMock())
+    mocker.patch.object(recall_reply, "offer_index", OfferIndex())
+    mocker.patch.object(
+        recall_reply, "read_situation", return_value=_situation(_road_feed(), _evac_feed())
+    )
+    say = mocker.Mock()
+
+    outcome = _route(say, text="Is the road to Learmonth safe?", client=mocker.Mock())
+
+    assert isinstance(outcome, NeedRecall)
+    assert OFFICIAL_UNAVAILABLE_ALERT not in _block_text(outcome.blocks)
+    assert OFFICIAL_UNAVAILABLE_ALERT not in outcome.llm_context

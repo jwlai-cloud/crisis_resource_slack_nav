@@ -61,6 +61,18 @@ from mocks.server import EvacCentre, RoadClosure
 # same wording the workspace cards use (:data:`recall.blocks.VERIFY_NOTE`).
 VERIFY_NOTE = "Verify before relying on this."
 
+# The explicit, plain user-facing alert for the WHOLE-path degraded-official case
+# (task 034, Part C): the situation read failed entirely, or every official feed
+# relevant to the need is down. Spoken in the resident's own terms — not a silent
+# omission and not an implied-complete answer. It names the gap (the official
+# directories are unreachable), refuses to judge current conditions, and points the
+# resident to verify directly. Never asserts safety; never invents (guardrails 2/4).
+OFFICIAL_UNAVAILABLE_ALERT = (
+    "⚠ I couldn't reach the official directories right now, so I can't give you "
+    "current road or official conditions. Please verify directly with the official "
+    "source before relying on anything here."
+)
+
 # The section header the official cards sit beneath, distinct from the workspace
 # matches header so the resident reads two clearly-labelled groups, not one
 # cross-source ranking.
@@ -328,6 +340,41 @@ def _unavailable_card(feed: SituationFeed) -> list[Block]:
     ]
 
 
+def is_official_fully_unavailable(need: Need, situation: SituationSnapshot) -> bool:
+    """True when official info is *fully* unavailable for this need (task 034, Part C).
+
+    The whole-path degraded case: the need maps to at least one official feed, but
+    every relevant feed is down — so there is NOT a single available, relevant record
+    to surface. The reply must then carry the explicit :data:`OFFICIAL_UNAVAILABLE_ALERT`
+    rather than imply a complete answer (guardrail 4).
+
+    Distinguished from the *no-official-answer* case: a need that maps to no feed at all
+    (e.g. "baby formula") has no relevant down feed either, so this is ``False`` — there
+    is simply nothing official to say, not a degraded source. And an available-but-empty
+    relevant feed is likewise ``False`` (it read fine, it just has nothing to report).
+    """
+    return not _relevant_records(need, situation) and bool(_relevant_down_feeds(need, situation))
+
+
+def build_official_unavailable_blocks(need: Need) -> list[Block]:
+    """The explicit alert section when the situation read failed *entirely* (task 034).
+
+    Used by the need-reply composer when :func:`coordinator.situation.read_situation`
+    could not be read at all (no snapshot) — there are no per-feed cards to render, so
+    without this the reply would be silent on the official picture and *imply* a
+    complete answer. Instead we render a loud, plain alert (the
+    :data:`OFFICIAL_UNAVAILABLE_ALERT`) under the standing "Official information" header,
+    carrying the verify note and NO action buttons (guardrail 1). Pure render, no I/O.
+    Never asserts safety; never invents a status (guardrails 2/4).
+    """
+    return [
+        HeaderBlock(text=PlainTextObject(text=OFFICIAL_SECTION_HEADER)),
+        _rank_label_block(advisory=True),
+        SectionBlock(text=MarkdownTextObject(text=OFFICIAL_UNAVAILABLE_ALERT)),
+        ContextBlock(elements=[MarkdownTextObject(text=VERIFY_NOTE)]),
+    ]
+
+
 def build_official_blocks(need: Need, situation: SituationSnapshot) -> list[Block]:
     """Compose the "Official information" section for a need from the situation snapshot.
 
@@ -338,7 +385,10 @@ def build_official_blocks(need: Need, situation: SituationSnapshot) -> list[Bloc
     verify note, and NO action buttons.
 
     A feed relevant to the need but ``available=False`` renders an explicit
-    "unavailable" card rather than being dropped (guardrail 4). If no feed is
+    "unavailable" card rather than being dropped (guardrail 4). When EVERY relevant
+    feed is down (no available relevant record at all), the section also leads with the
+    explicit whole-path :data:`OFFICIAL_UNAVAILABLE_ALERT` so the reply states the gap
+    loudly rather than implying a complete answer (task 034, Part C). If no feed is
     relevant — or every relevant feed is available-but-empty — NO section renders
     (``[]``): the no-noise rule (task 012), never a dump of the full official picture.
     """
@@ -349,6 +399,10 @@ def build_official_blocks(need: Need, situation: SituationSnapshot) -> list[Bloc
         return []
 
     blocks: list[Block] = [HeaderBlock(text=PlainTextObject(text=OFFICIAL_SECTION_HEADER))]
+    # Whole-path degraded: every relevant feed is down. Lead with the loud, plain alert
+    # before the per-feed "unavailable" cards so the gap is unmissable (task 034 C).
+    if not pairs and down_feeds:
+        blocks.append(SectionBlock(text=MarkdownTextObject(text=OFFICIAL_UNAVAILABLE_ALERT)))
     for feed, record in pairs:
         blocks.extend(_record_card(feed, record))
     for feed in down_feeds:

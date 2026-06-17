@@ -16,11 +16,15 @@ data file, or a feed named in ``MOCK_FEED_DOWN`` (the demo's degraded-state cue)
 both come back as a typed error so the agent states the degraded source by name
 rather than going silent (guardrail 4).
 
-Transport: this module is launched as a stdio subprocess by pydantic-ai's
-``MCPServerStdio`` from ``agent.agent.run_agent`` (``uv run python -m
-mocks.server``); there is no port or URL to manage. The same tool bodies are
-unit-tested directly and the session is integration-tested via FastMCP's
-in-memory ``Client``.
+Transport: two ways to run the same server (task 034). By default this module is
+launched as a stdio subprocess by pydantic-ai's ``MCPServerStdio`` from
+``agent.agent.run_agent`` (``python -m mocks.server``) — zero-config, the path
+local `slack run` uses. When ``MOCK_MCP_HTTP_PORT`` is set it instead serves over
+**HTTP** on ``127.0.0.1:<port>`` (``mcp.run(transport="http", …)``), a persistent,
+long-lived server the agent connects to via ``MCPServerStreamableHTTP`` — so the
+deployed container imports FastMCP once at startup and stays warm, rather than
+paying a cold per-reply subprocess spawn. The same tool bodies are unit-tested
+directly and the session is integration-tested via FastMCP's in-memory ``Client``.
 """
 
 import json
@@ -216,8 +220,30 @@ def get_official_advice() -> FeedResult | FeedError:
     return _load_feed("official_advice")
 
 
+# Localhost only: the HTTP mock is reached solely by the agent in the SAME container
+# (deploy/entrypoint.sh), never exposed off-host — there is no inbound port to the box.
+_HTTP_HOST = "127.0.0.1"
+
+
+def _run() -> None:
+    """Run the mock MCP server, choosing transport from the environment (task 034).
+
+    When ``MOCK_MCP_HTTP_PORT`` is set, serve persistently over HTTP on
+    ``127.0.0.1:<port>`` (the deployed container's warm, long-lived server the agent
+    reaches via ``MCPServerStreamableHTTP``); otherwise fall back to the **stdio**
+    default — the zero-config transport pydantic-ai's ``MCPServerStdio`` launches for
+    local `slack run`. The FastMCP banner is suppressed either way: on stdio it is
+    noise in the host app's logs, and we keep the container logs clean too.
+    """
+    port = os.environ.get("MOCK_MCP_HTTP_PORT")
+    if port:
+        logger.info("Mock MCP server starting over HTTP on %s:%s", _HTTP_HOST, port)
+        mcp.run(transport="http", host=_HTTP_HOST, port=int(port), show_banner=False)
+    else:
+        # Launched as a stdio subprocess by pydantic-ai's MCPServerStdio. The banner
+        # goes to stderr (not the stdio JSON-RPC channel) but is still noise.
+        mcp.run(show_banner=False)
+
+
 if __name__ == "__main__":
-    # Launched as a stdio subprocess by pydantic-ai's MCPServerStdio. Suppress
-    # the FastMCP banner so it doesn't clutter the host app's `slack run` logs
-    # (it goes to stderr, not the stdio JSON-RPC channel, but it is noise).
-    mcp.run(show_banner=False)
+    _run()

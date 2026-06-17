@@ -30,8 +30,11 @@ from recall.official_blocks import (
     OFFICIAL_ADVISORY_BAR_EMOJI,
     OFFICIAL_INFO_BAR_EMOJI,
     OFFICIAL_SECTION_HEADER,
+    OFFICIAL_UNAVAILABLE_ALERT,
     VERIFY_NOTE,
     build_official_blocks,
+    build_official_unavailable_blocks,
+    is_official_fully_unavailable,
 )
 
 FETCHED_AT = datetime(2026, 3, 15, 6, 30, tzinfo=UTC)
@@ -338,6 +341,101 @@ def test_water_need_can_surface_advice_water_notice_too() -> None:
 
     assert "Exmouth Recreation Centre" in text  # evac water point
     assert "Emergency water point now open" in text  # the water advice notice
+
+
+# --- Part C: degraded-official whole-path alert (task 034) -------------------
+#
+# The per-feed "unavailable" card (above) handles ONE down feed. Part C strengthens
+# the WHOLE-path case: when EVERY relevant official feed is down — or the situation
+# read failed entirely (no snapshot) — the reply must carry an explicit, plain
+# user-facing alert ("couldn't reach the official directories — can't give current
+# conditions, verify directly"), not silence or an implied-complete answer. Never
+# asserts safety; never invents.
+
+
+def test_alert_text_refuses_safety_and_points_to_verify() -> None:
+    """The standing alert says official sources are unreachable + verify; asserts no safety."""
+    alert = OFFICIAL_UNAVAILABLE_ALERT.lower()
+
+    assert "official" in alert
+    assert "verify" in alert
+    # Never asserts safety, never says travel is fine.
+    assert "safe to travel" not in alert
+    assert "okay to travel" not in alert
+
+
+def test_is_fully_unavailable_when_all_relevant_feeds_down() -> None:
+    """A safety question with every relevant feed down -> official info fully unavailable."""
+    situation = _situation(road=_down_feed("road_closures", "Simulated outage."))
+
+    need = _need(need_type="road safety", is_information=True)
+
+    assert is_official_fully_unavailable(need, situation) is True
+
+
+def test_is_not_fully_unavailable_when_a_relevant_feed_has_records() -> None:
+    """If any relevant feed is available with records, official info is NOT fully down."""
+    situation = _situation(road=_feed("road_closures", (_road_record(),)))
+
+    need = _need(need_type="road safety", is_information=True)
+
+    assert is_official_fully_unavailable(need, situation) is False
+
+
+def test_is_not_fully_unavailable_when_no_feed_is_relevant() -> None:
+    """A need with no relevant feed is not a degraded-official case (it has no official answer)."""
+    situation = _situation(road=_down_feed("road_closures", "down"))
+
+    need = _need(need_type="baby formula")  # maps to no official feed
+
+    assert is_official_fully_unavailable(need, situation) is False
+
+
+def test_all_relevant_feeds_down_renders_explicit_alert_block() -> None:
+    """All relevant feeds down -> the official section carries the explicit alert + the down card."""
+    situation = _situation(road=_down_feed("road_closures", "Simulated outage."))
+    need = _need(need_type="road safety", is_information=True)
+
+    text = _all_text(need, situation)
+
+    assert OFFICIAL_UNAVAILABLE_ALERT in text  # the loud whole-path alert
+    assert "road_closures" in text.lower()  # the down feed still named (per-feed card)
+    assert "unavailable" in text.lower()
+
+
+def test_available_feeds_do_not_trigger_the_alert() -> None:
+    """A working official section carries NO whole-path alert (only renders when degraded)."""
+    situation = _situation(road=_feed("road_closures", (_road_record(),)))
+    need = _need(need_type="road safety", is_information=True)
+
+    text = _all_text(need, situation)
+
+    assert OFFICIAL_UNAVAILABLE_ALERT not in text
+    assert "Minilya-Exmouth Road" in text  # the live card renders normally
+
+
+def test_build_official_unavailable_blocks_is_loud_and_button_free() -> None:
+    """The situation-read-failed builder renders an explicit, button-free alert card."""
+    blocks = build_official_unavailable_blocks(_need(need_type="road safety", is_information=True))
+
+    assert blocks, "a wholesale read failure must not render silence"
+    types = [b.to_dict()["type"] for b in blocks]
+    assert "actions" not in types  # informational only (guardrail 1)
+    text = "\n".join(_text_of(b.to_dict()) for b in blocks)
+    assert OFFICIAL_UNAVAILABLE_ALERT in text
+    assert VERIFY_NOTE in text
+
+
+def test_build_official_unavailable_blocks_never_asserts_safety() -> None:
+    """The wholesale-failure alert never asserts safety and never invents data."""
+    text = "\n".join(
+        _text_of(b.to_dict())
+        for b in build_official_unavailable_blocks(_need(need_type="road safety"))
+    ).lower()
+
+    assert "safe to travel" not in text
+    assert "okay to travel" not in text
+    assert "it is safe" not in text
 
 
 # --- determinism -------------------------------------------------------------
