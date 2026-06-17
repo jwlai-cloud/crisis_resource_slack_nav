@@ -102,6 +102,31 @@ resolved case feeds back into the workspace's searchable memory, so the communit
 4. **Degraded states are explicit** — a down feed or an empty result is stated plainly,
    never papered over with a guess.
 
+## Deployment & live MCP integration
+
+The agent is deployed **always-on** so judges can interact with it in the sandbox
+(socket mode = an outbound WebSocket, so it runs as a long-lived worker — one Docker
+image, deployed to a **free-tier GCE e2-micro**). It's lean: ~**224 MiB** RAM under
+load on a 1 GB box (~400 MB always free), because the heavy LLM compute is a remote
+API call — the VM just orchestrates I/O.
+
+**Two genuine MCP server integrations, called on every reply:**
+- **Slack's own MCP server** (`mcp.slack.com`, via `MCPServerStreamableHTTP` + the user
+  token) — first-party workspace tools.
+- **Our official-directories MCP server** (FastMCP) — run **persistently over HTTP** in
+  the container (`Uvicorn` on `127.0.0.1:8765`), the agent connecting via
+  `MCPServerStreamableHTTP` — the *same pattern* as Slack's server, so it's a real,
+  long-lived MCP server the agent queries each turn, not a toy. **The MCP integration is
+  real; the data is simulated** (static JSON — live Main Roads WA / DFES feeds aren't
+  public), and we never claim live government data. If a feed or the server is
+  unreachable, the agent degrades — it retries without the toolset and tells the user
+  the official directories couldn't be reached, never inventing or going silent.
+
+**How to verify it's a real MCP call** (for a technical judge): on the deployed VM the
+mock MCP server is a live process listening on `127.0.0.1:8765` (`sudo ss -tlnp`), and
+`agent/agent.py` connects to it with pydantic-ai's `MCPServerStreamableHTTP`; a real
+HTTP round-trip is covered by `tests/integration/mocks/test_server_http.py`.
+
 ## Challenges we ran into
 
 - **Socket Mode vs serverless.** The agent runs an outbound WebSocket, so it can't
