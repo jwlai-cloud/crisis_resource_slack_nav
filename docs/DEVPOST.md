@@ -72,12 +72,19 @@ resolved case feeds back into the workspace's searchable memory, so the communit
   database. No vector store on our side: we build a keyword query from the parsed need,
   let Slack rank server-side, then re-rank for the crisis domain (need-fit first,
   7-day recency second, the requester's own echoes and the bot's posts filtered out).
-- **External reach** — thin **FastMCP** servers backed by static JSON simulate Main
-  Roads WA closures, DFES evac centres, and Emergency WA advice. The agent consumes
-  them as additional MCP toolsets — *identical* to how it consumes Slack's own MCP
-  server — so the integration pattern is exactly what wiring a real government feed
-  would be. A downed feed returns a structured error, surfaced as an explicit
-  "feed unavailable" line, never silence.
+- **External reach (two real MCP integrations).** (1) The agent wires **Slack's own
+  MCP server** (`mcp.slack.com`, via `MCPServerStreamableHTTP` with the user token) as
+  a toolset. (2) For the official directories it consumes our own **FastMCP** servers
+  over `MCPServerStdio` — real MCP tools (`get_road_closures` / `get_evac_centres` /
+  `get_official_advice`) the agent calls in its reasoning loop. **The MCP integration
+  is real; the *data* is simulated** — the servers are backed by static JSON because
+  live Main Roads WA / DFES feeds aren't publicly available, so the wiring is exactly
+  what a real government feed would use. **We never claim live government data.** MCP is
+  load-bearing: it carries the entire official-information half of every answer (the
+  road-closure advisory, the water point, the evac centres) and the whole
+  safety-question response — remove it and the agent can't tell you a road is closed.
+  A downed feed returns a structured error, surfaced as an explicit "feed unavailable"
+  line, never silence.
 - **Durable board** — the coordinator Canvas is the channel canvas of the crisis
   channel; it survives restarts even though the matching index is in-memory, and
   repopulates from channel history on startup.
@@ -123,6 +130,6 @@ swap point); measurable impact metrics (needs matched, time-to-match, cases reus
 
 ## Built with
 
-Python 3.13 · Slack Bolt for Python · Block Kit · Slack Real-Time Search API · Model
-Context Protocol (FastMCP) · pydantic-ai · Vertex AI / Anthropic / OpenAI · uv · ruff ·
-pytest.
+Python 3.13 · Slack Bolt for Python · native Slack agent surface · Block Kit · Slack
+Real-Time Search API · Model Context Protocol — Slack's MCP server + our own FastMCP
+servers · pydantic-ai · Vertex AI / Anthropic / OpenAI · uv · ruff · pytest.
