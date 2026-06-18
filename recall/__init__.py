@@ -12,17 +12,46 @@ The *plan -> rank -> compose* slice of the agent loop for in-workspace memory
   states.
 """
 
-from recall.blocks import VERIFY_NOTE, build_recall_blocks
+from recall.blocks import (
+    ACTION_CONNECT,
+    ACTION_NOT_RELEVANT,
+    ACTION_RESOLVE,
+    VERIFY_NOTE,
+    WORKSPACE_BAR_EMOJI,
+    build_recall_blocks,
+)
 from recall.client import build_query, recall_offers
 from recall.models import RecallError, RecallMatch, match_from_message
+from recall.official_blocks import (
+    OFFICIAL_ADVISORY_BAR_EMOJI,
+    OFFICIAL_INFO_BAR_EMOJI,
+    OFFICIAL_SECTION_HEADER,
+    OFFICIAL_UNAVAILABLE_ALERT,
+    build_official_blocks,
+    build_official_unavailable_blocks,
+    is_official_fully_unavailable,
+)
+from recall.payload import ConnectPayload
 from recall.ranking import need_keywords, rank_matches, score_match, tokenize
 
 __all__ = [
+    "ACTION_CONNECT",
+    "ACTION_NOT_RELEVANT",
+    "ACTION_RESOLVE",
+    "OFFICIAL_ADVISORY_BAR_EMOJI",
+    "OFFICIAL_INFO_BAR_EMOJI",
+    "OFFICIAL_SECTION_HEADER",
+    "OFFICIAL_UNAVAILABLE_ALERT",
     "VERIFY_NOTE",
+    "WORKSPACE_BAR_EMOJI",
+    "ConnectPayload",
     "RecallError",
     "RecallMatch",
+    "build_official_blocks",
+    "build_official_unavailable_blocks",
     "build_query",
     "build_recall_blocks",
+    "is_official_fully_unavailable",
     "match_from_message",
     "need_keywords",
     "rank_matches",

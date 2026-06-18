@@ -27,8 +27,26 @@ regression net, typed Need/Offer/Resolution core + structured parsing, RTS recal
 domain ranking and explicit degraded states, in-memory offer index (ADR-0003), unified
 single-reply UX with contact mentions. All live-verified; 13 bugs found and fixed in
 live testing. Gemini now runs via Vertex AI express mode (no free-tier caps). Stage PR:
-https://github.com/jwlai-cloud/crisis_resource_slack_nav/pull/1. Next: **W3 — mock MCP
-servers + action buttons.**
+https://github.com/jwlai-cloud/crisis_resource_slack_nav/pull/1. W3 done (2026-06-12, same day): tasks 008-010 — mock MCP servers (FastMCP, stdio,
+Narelle scenario feeds with structured degraded states), Connect / Mark resolved /
+Not relevant action buttons (group DM intro, index locking, audit-trail seed), and
+match-card visual parity with the landing page. All live-verified. Same evening:
+backlog tasks 006 (passive listening in #exmouth-mutual-aid, live-verified incl.
+chatter silence), 014 (need-echo filter), 015 (dismissal memory), and 016
+(index/RTS twin dedup via ts-identity) all shipped — 259 tests. Remaining backlog:
+007, 011, 012 (Canvas + situation board), 013 (seed data; needs the Mara alias
+invited and human-typed seed posts — API-posted messages carry the app's bot_id
+and are guard-filtered).
+
+**W4 in progress (2026-06-13):** coordinator Canvas live case board + audit log
+(017) and cross-process canvas-id sharing + link announce (018) shipped and
+live-verified — the board tracks Open → Connected → Resolved with an activity
+log, refreshing on offer-indexing and on every button action. The Canvas is the
+durable board (ADR-0005 — the persistence answer). Remaining W4: 019 (board
+display polish: resolve user-id mentions to names, humanize the audit `offer:<uuid>`
+targets), 013 (seed data; needs the Mara alias invited + human-typed posts), 012
+(situation board section), 007/011 (polish pool). 319 tests. Next after W4:
+**W5 — deploy for judging uptime + 3-min demo video + Devpost submit.**
 
 ## Artifacts in the repo
 

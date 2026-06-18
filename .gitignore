@@ -1,6 +1,8 @@
 # Secrets / environment
 .env*
 !.env.example
+# Commit the deploy template; deploy/.env.deploy (real secrets) stays ignored.
+!deploy/.env.deploy.example
 
 # Python
 .venv/
@@ -30,3 +32,7 @@ data/
 .claude/*.local.json
 
 # Slack CLI internals (`.slack/` ships its own .gitignore for apps.dev.json etc.)
+# Cross-process coordinator-board canvas id (task 018): sandbox-specific state the
+# `make board` script + the agent share, not source. The Slack CLI's own
+# .slack/.gitignore doesn't cover it, so ignore it here.
+.slack/board_canvas_id

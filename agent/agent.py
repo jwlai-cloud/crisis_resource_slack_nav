@@ -1,8 +1,10 @@
 import logging
 import os
+import sys
+from pathlib import Path
 
 from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPServerStreamableHTTP
+from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
 from pydantic_ai.models import Model
 
 from agent.deps import AgentDeps
@@ -126,6 +128,54 @@ Available capabilities:
 Use search and read to find prior offers, coordinator notices, and resolved cases
 relevant to a need. When you surface anything you found this way, carry its source
 (who posted, which channel) and timestamp into your reply.
+
+## OFFICIAL DIRECTORIES (external MCP tools)
+You have tools that reach external official directories for the **plan** step's
+live public information — these are the MCP feeds the design doc names:
+- `get_road_closures` — current road closures (Main Roads WA-style).
+- `get_evac_centres` — evacuation centres with capacity and status (DFES-style).
+- `get_official_advice` — official advice and warning notices (Emergency WA-style).
+
+Rules for using them — these enforce the safety guardrails, do not relax them:
+- Consult the relevant directory whenever a need touches travel, shelter,
+  evacuation, water, power, or an official warning. State in your plan which
+  directories you are checking. Match the directory to the need — this is the
+  relevance rule. Surface
+  only the official items DIRECTLY relevant to the parsed need, never the full
+  official picture: a water, drinking, or supply need
+  surfaces the water point(s), not the whole road list; an explicit travel or road
+  mention (or a "can I get to X / is the road…" need) surfaces the relevant closure(s);
+  a shelter or somewhere-to-stay need
+  surfaces the evacuation centre(s); an official-warning question surfaces the
+  advice notice. Prune by relevance, never by hiding.
+- The relevant official items are shown to the resident as structured, sourced
+  cards beneath your reply — each card already carries its
+  feed name and a `fetched_at` timestamp (rendered as `feed / fetched-at`) plus the
+  verify-before-relying note. So DEFER the official specifics to those cards:
+  do not re-list the closures, centres, or water points in your prose, and do not
+  restate each item's feed/fetched-at source line. Refer to "the official items
+  below" in plain prose and let the cards carry the sourcing.
+- These are official sources you relay, not your own judgement. Never restate a
+  closure or advisory as a safety assertion of your own — never say a road is
+  safe or that it is okay to travel. The cards present the official status with its
+  source and the verify-before-relying note.
+- A tool may return a structured error instead of data (a feed is unavailable or
+  simulated down). When it does, say so plainly and name the feed that could not
+  be reached (e.g. "the road-closures feed is unavailable right now"), then
+  continue with what you do have. Never silently skip a feed and never invent or
+  guess closures, centres, or advice to fill the gap.
+
+## SAFETY QUESTIONS (road / travel "is it safe?")
+When a resident asks whether a road or travel route is SAFE — "is the road to X
+safe to drive?", "can I safely get to Y?" — LEAD your reply with an explicit
+refusal to make that call: say plainly that you can't tell them whether it is safe
+because you don't make safety calls, and then point them at the latest official
+information (the closure cards below) so they can decide for themselves, with the
+verify-before-relying note. Do not answer yes or no. This explicit refusal lead is
+ONLY for road/travel SAFETY questions — do NOT prepend it to a plain
+where/what/status information need (e.g. "where do we evacuate?", "is the water
+point open?"), which you answer directly from the official items without a safety
+disclaimer.
 """
 
 logger = logging.getLogger(__name__)
@@ -182,6 +232,48 @@ def get_model() -> "str | Model":
 
 SLACK_MCP_URL = "https://mcp.slack.com/mcp"
 
+# The MCP server toolset types this run attaches (Slack MCP + the mock directories).
+# Used to identify which toolsets to drop on the graceful-degradation retry (task 034)
+# — a connection/enter failure of one of these must degrade, not crash the reply.
+_MCP_TOOLSET_TYPES = (MCPServerStdio, MCPServerStreamableHTTP)
+
+# Repo root — the cwd the mock-MCP subprocess runs from so `-m mocks.server`
+# resolves regardless of where the Slack CLI launches the app.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _mock_mcp_server() -> MCPServerStdio | MCPServerStreamableHTTP:
+    """The mock official-directories MCP server toolset, transport chosen by env (task 034).
+
+    Two transports, same server (mocks/server.py):
+
+    * **Persistent HTTP** (``MOCK_MCP_URL`` set — the deployed container path). The
+      container's entrypoint starts ``python -m mocks.server`` once over HTTP and the
+      agent connects to that long-lived server via ``MCPServerStreamableHTTP`` — same
+      shape as the Slack MCP integration. FastMCP is imported once at container start
+      and stays warm, so each reply skips the ~5-12s cold subprocess spawn that hung
+      replies on the constrained e2-micro.
+    * **Stdio subprocess** (no ``MOCK_MCP_URL`` — local `slack run`, zero-config).
+      pydantic-ai launches and tears down ``python -m mocks.server`` around each run;
+      the same interpreter that runs the app runs the subprocess, so it always uses
+      the project's locked deps. The cold import on a constrained host measured ~12s,
+      past the 5s default init timeout (an MCP handshake ``BrokenResourceError`` that
+      aborted the reply), so the stdio path keeps the 30s init headroom; locally the
+      import is sub-second so it never bites.
+    """
+    mock_url = os.environ.get("MOCK_MCP_URL")
+    if mock_url:
+        logger.info("Mock official-directories MCP server over HTTP: %s", mock_url)
+        return MCPServerStreamableHTTP(mock_url)
+
+    return MCPServerStdio(
+        command=sys.executable,
+        args=["-m", "mocks.server"],
+        cwd=str(_REPO_ROOT),
+        timeout=30,
+    )
+
+
 agent = Agent(
     deps_type=AgentDeps,
     system_prompt=SYSTEM_PROMPT,
@@ -219,10 +311,59 @@ def run_agent(text, deps, message_history=None, recall_context=None):
     else:
         logger.info("Slack MCP Server disabled (no user_token)")
 
-    return agent.run_sync(
-        prompt,
-        model=get_model(),
-        deps=deps,
-        message_history=message_history,
-        toolsets=toolsets,
-    )
+    # Mock official-directories MCP server: enabled by default, kill-switch via
+    # MOCK_MCP_DISABLED=1 (e.g. to isolate the agent from the external-reach
+    # pillar during debugging). Thin mocks, never live government feeds (§9).
+    if os.environ.get("MOCK_MCP_DISABLED") == "1":
+        logger.info("Mock official-directories MCP server disabled (MOCK_MCP_DISABLED=1)")
+    else:
+        logger.info("Mock official-directories MCP server enabled")
+        toolsets.append(_mock_mcp_server())
+
+    return _run_with_mcp_degradation(prompt, deps, message_history, toolsets)
+
+
+def _run_with_mcp_degradation(prompt, deps, message_history, toolsets):
+    """Run the agent, degrading gracefully if an MCP toolset can't be reached (task 034).
+
+    The degraded-states guardrail: a flaky external source must degrade, NOT take the
+    agent down. An MCP toolset that fails to connect or enter (the prod hang's shape —
+    a cold mock-server spawn past the init timeout surfaced as a handshake
+    ``BrokenResourceError``) used to raise straight out of the run and the reply never
+    landed. Here we catch any failure from the run, and — when MCP toolsets were in
+    play — retry **once** without them so the prose still composes. The official
+    *cards* come from the direct ``read_situation`` path (recall_reply), not these
+    toolsets, so they render regardless; and a degraded source is announced to the
+    resident by that path's degraded notice, never silently dropped.
+
+    The retry is a single bounded fallback, not a swallow-all: if there were no MCP
+    toolsets to drop (so the failure is unrelated to MCP), or the toolset-free retry
+    *also* fails, the error propagates to the listener's own error handling rather
+    than being hidden.
+    """
+    try:
+        return agent.run_sync(
+            prompt,
+            model=get_model(),
+            deps=deps,
+            message_history=message_history,
+            toolsets=toolsets,
+        )
+    except Exception as exc:
+        mcp_toolsets = [t for t in toolsets if isinstance(t, _MCP_TOOLSET_TYPES)]
+        if not mcp_toolsets:
+            raise
+        remaining = [t for t in toolsets if t not in mcp_toolsets]
+        logger.warning(
+            "Agent run failed with %d MCP toolset(s) attached (%s); retrying once "
+            "without them so the reply still composes (degraded-states guardrail).",
+            len(mcp_toolsets),
+            exc,
+        )
+        return agent.run_sync(
+            prompt,
+            model=get_model(),
+            deps=deps,
+            message_history=message_history,
+            toolsets=remaining,
+        )

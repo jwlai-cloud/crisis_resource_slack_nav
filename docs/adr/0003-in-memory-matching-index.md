@@ -59,3 +59,29 @@ optimisation layered over that durable store, never a replacement for it.
   the design doc asks. If a future requirement needs durable matching state
   (e.g. the coordinator Canvas surviving restarts, W4), that is a new fork with
   its own ADR; we do not pre-build it here.
+
+## Status note (2026-06-12, task 010)
+
+The "Not thread-safe" revisit trigger **fired**. Task 010 wired the Connect /
+Mark resolved action buttons, which mutate the index (`mark_matched` /
+`mark_resolved` — a non-atomic get -> `model_copy` -> set) from Bolt's thread
+pool, so concurrent transitions could lose a write. Resolved with the **minimal**
+response named here: a `threading.Lock` in `OfferIndex` now guards every access to
+the backing dict (`matching/index.py`). This keeps the single-process in-memory
+design intact — **supersession (an external store) is not needed** for the
+single-process socket-mode demo. The remaining triggers (multi-process, durable
+matching state) still stand for a future ADR. Decision unchanged; this is a
+hardening note, not a new decision.
+
+## Status note (2026-06-13, task 017)
+
+The "durable matching state (e.g. the coordinator Canvas surviving restarts, W4)"
+revisit trigger named in the Consequences **fired** — and was answered **without
+changing this decision**. Task 017 makes a **Slack Canvas** the durable coordinator
+board: the board's *content* is persisted by Slack (it survives a restart this
+index does not), while this in-memory index **stays the fast path** for matching.
+The board is rendered *from* the index + audit trail; it does not feed them back,
+so there is no new source of truth to reconcile. See
+`docs/adr/0005-canvas-as-durable-board.md`. Index **rehydration on restart** (RTS
+reseed) remains explicitly **deferred** — a freshly created board renders empty
+status groups until new offers arrive, which is honest. Decision here unchanged.

@@ -141,3 +141,75 @@ async def test_recall_returns_error_on_unexpected_failure(
 
     assert isinstance(result, RecallError)
     assert result.reason == "request_failed"
+
+
+async def test_recall_drops_need_echo_when_request_text_passed(
+    make_need: Callable[..., Need],
+    mocker: MockerFixture,
+) -> None:
+    """The requester's own need echoed back from RTS is filtered when request_text is given (014)."""
+    need = make_need(need_type="generator", location="Exmouth")
+    client = mocker.Mock(spec=WebClient)
+    request_text = "Family of 4 in Exmouth, no power, need a generator"
+    client.api_call.return_value = _ok_response(
+        [
+            {
+                "content": "Family of 4 in Exmouth, no power, need a generator",
+                "author_name": "Requester",
+                "author_user_id": "U_REQ",
+                "channel_name": "general",
+                "channel_id": "C1",
+                "message_ts": "1742550600.000200",
+                "permalink": "https://x/echo",
+            },
+            {
+                "content": "I have a spare generator to lend, collect from town",
+                "author_name": "Jordan",
+                "author_user_id": "U_OFFERER",
+                "channel_name": "offers",
+                "channel_id": "C2",
+                "message_ts": "1742550700.000200",
+                "permalink": "https://x/offer",
+            },
+        ]
+    )
+
+    result = await recall_offers(need, client, user_token=USER_TOKEN, request_text=request_text)
+
+    assert isinstance(result, list)
+    texts = [m.text for m in result]
+    assert "I have a spare generator to lend, collect from town" in texts
+    assert all("need a generator" not in t for t in texts)  # the echo is gone
+
+
+async def test_recall_logs_observability_line(
+    make_need: Callable[..., Need],
+    mocker: MockerFixture,
+) -> None:
+    """recall_offers emits one INFO line with query + latency + raw/post-filter counts (012)."""
+    need = make_need(need_type="generator", location="Exmouth")
+    client = mocker.Mock(spec=WebClient)
+    client.api_call.return_value = _ok_response(
+        [
+            {
+                "content": "spare generator in Exmouth",
+                "author_name": "Jordan",
+                "author_user_id": "U_OFFERER",
+                "channel_name": "offers",
+                "channel_id": "C1",
+                "message_ts": "1742550600.000200",
+                "permalink": "https://x/p1",
+            }
+        ]
+    )
+    info = mocker.patch("recall.client.logger.info")
+
+    await recall_offers(need, client, user_token=USER_TOKEN)
+
+    observ = [c for c in info.call_args_list if "RTS recall:" in str(c.args[0])]
+    assert len(observ) == 1
+    fmt, *args = observ[0].args
+    assert "query=" in fmt and "latency=" in fmt and "raw=" in fmt and "post_filter=" in fmt
+    assert args[0] == "generator Exmouth"  # query
+    assert args[2] == 1  # raw count
+    assert args[3] == 1  # post-filter count

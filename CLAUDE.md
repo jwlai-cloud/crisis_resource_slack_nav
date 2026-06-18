@@ -128,6 +128,8 @@ Opinionated agent-team workflow in two modes. Canonical lifecycle and rules live
 | `make pre-commit` | format-check + lint-check + unit tests. |
 | `make ci` | Full pre-PR fan: install → format/lint checks → tests. |
 | `make run` | `slack run` against the sandbox. |
+| `make board` | Open the coordinator board channel canvas on demand (`scripts/open_board.py`) — the permanent **titled** "Community Cases" top-bar tab of `CRISIS_CHANNEL`. **Reuse, never delete** (task 027, ADR-0005): reattaches (persisted id → `properties.tabs` discovery → create-titled) and full-replaces the content, and **persists its id** to the gitignored `.slack/board_canvas_id`. `make board ARGS=--fresh` forces a clean empty re-render (no delete, no new tab). It does **not** announce — the titled tab is the discovery. Needs `SLACK_USER_TOKEN` (user `canvases:write`). The running agent's first board refresh reads that same id file and *edits* this canvas (no duplicate); it then auto-refreshes on every Connect / Resolve / Dismiss (task 017, ADR-0005). |
+| `make seed-demo` | Seed the Cyclone Narelle / Exmouth scenario into `CRISIS_CHANNEL` for the demo (`scripts/seed_demo.py`) — believable offers + SES/DFES notices + chatter, posted via `SLACK_USER_TOKEN` (needs user `chat:write` + `channels:history`). **Idempotent**: every message carries a `·crn-seed` marker; a re-run scans recent history and skips what's already there (no duplicates). `make seed-demo ARGS=--fresh` deletes the prior seed (marked messages only) and re-seeds clean. Offers are posted as the **operator** (no persona tokens) and become **RTS-matchable ~1 min after seeding** — seed, wait ~60s, *then* post a need (task 013). |
 
 > **Manual QA order:** `format-fix → lint-fix → format-check → lint-check → pre-commit → unit-tests`. Fixers before checkers. CI runs the non-fix variants only.
 
@@ -137,6 +139,9 @@ Slack CLI (v4.2.0, installed at `~/.local/bin/slack`):
 - `slack auth list` — verify auth. Logged into the `crisis-resource-nav` sandbox org (Team `E0B9Z77AX2R`).
 - `slack manifest validate` — check `manifest.json` after editing scopes/events.
 - `.env` needs `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) — pydantic-ai picks the model in `agent/agent.py:get_model()`.
+- `CRISIS_CHANNEL` (optional, channel id; empty/unset = off) — enables passive listening (parse every top-level message, ack offers / answer needs) in that one channel only; everywhere else stays mention-gated (ADR-0004). Also the channel `make seed-demo` seeds the demo scenario into (task 013).
+- `BACKFILL_ON_START` (optional, default off; task 026, ADR-0006) — when truthy AND `CRISIS_CHANNEL` is set, the agent sweeps that channel's `conversations.history` on startup, parses each message, and adds every parsed Offer to the in-memory index so seeded/prior offers reach the coordinator board (the index is otherwise wiped on every restart — ADR-0003). Opt-in because the dev file-watcher restarts the agent on every `.py` save and an always-on backfill would fire an LLM parse per history message each time (a parse storm); the demo operator sets it `true`, then restarts. Background daemon thread (non-blocking), best-effort (never raises), idempotent (re-parsing a message yields the same deterministic id — no duplicate row).
+- `COORDINATOR_CHANNEL` (optional, channel id; empty/unset = off) — **obsolete for the board as of task 027** (ADR-0005): the board no longer announces its link on create — the permanent titled "Community Cases" tab is the discovery mechanism. `coordinator/announce.py` and this var are left in place (harmless, unwired) for a later cleanup task; nothing in the board lifecycle reads them now.
 
 ## Step-by-Step Verification
 

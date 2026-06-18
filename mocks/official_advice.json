@@ -1,0 +1,26 @@
+[
+  {
+    "title": "EMERGENCY WARNING — Exmouth and surrounds",
+    "level": "Emergency Warning",
+    "area": "Exmouth, North West Cape",
+    "message": "Severe Tropical Cyclone Narelle has passed. You are in danger and need to act immediately. Remain indoors away from windows until an All Clear is issued. Do not attempt to travel — the Minilya-Exmouth Road is closed at the Yannarie River crossing.",
+    "advice": "Stay sheltered. Listen to ABC local radio for the All Clear.",
+    "updated_at": "2026-03-14T21:00:00+00:00"
+  },
+  {
+    "title": "Emergency water point now open — Exmouth Recreation Centre",
+    "level": "Advice",
+    "area": "Exmouth",
+    "message": "An emergency drinking-water point is operating at the Exmouth Recreation Centre on Murat Road. Town water is not safe to drink until further notice. Bring containers if you can.",
+    "advice": "Boil or avoid town water. Collect drinking water from the Recreation Centre water point.",
+    "updated_at": "2026-03-15T05:35:00+00:00"
+  },
+  {
+    "title": "Power and water outage — Exmouth",
+    "level": "Advice",
+    "area": "Exmouth, Learmonth",
+    "message": "Power and reticulated water remain down across Exmouth and Learmonth following cyclone damage. Horizon Power and the Water Corporation are assessing the network; no restoration time is confirmed.",
+    "advice": "Conserve battery and stored water. Check on neighbours, especially the elderly and those with medical needs.",
+    "updated_at": "2026-03-15T06:20:00+00:00"
+  }
+]

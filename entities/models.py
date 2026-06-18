@@ -66,7 +66,16 @@ def deterministic_id(author: str, source_ts: datetime) -> UUID:
 
 
 class Need(BaseModel):
-    """A resident's request for a resource (design doc §6)."""
+    """A resident's request for a resource (design doc §6).
+
+    ``is_information`` distinguishes an *information need* — one answerable ONLY by
+    official sources, with no tangible resource a neighbour could offer (road/travel
+    safety + status, evacuation locations, official-warning status) — from a
+    *resource need* (water, a generator, a spare bed, "where can I get fuel?"). It
+    defaults ``False`` so every existing call-site and every resource need stays a
+    resource need; only the parsing model flips it true. The routing layer reads it
+    to skip workspace offer-recall + Connect for information needs (task 030).
+    """
 
     id: UUID
     requester: str
@@ -74,6 +83,7 @@ class Need(BaseModel):
     location: str
     urgency: Urgency
     household_size: int
+    is_information: bool = False
     status: Status = Status.OPEN
     source_ts: datetime
 

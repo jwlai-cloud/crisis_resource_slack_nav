@@ -1,0 +1,29 @@
+# Fly.io config for the Crisis Resource Navigator — an ALWAYS-ON WORKER.
+#
+# There is deliberately NO [http_service] and NO ports: socket mode opens an
+# outbound websocket to Slack, so nothing listens for inbound HTTP. The machine
+# must stay up (auto_stop_machines = false, min_machines_running = 1) — a stopped
+# machine drops the websocket and the agent goes silent.
+#
+# Rename `app` to your created app (see deploy/README.md: `fly launch --no-deploy`).
+# Secrets are NOT in this file — deploy.sh imports them from deploy/.env.deploy via
+# `fly secrets import`.
+
+app = "crisis-resource-navigator"
+primary_region = "syd"  # Sydney — closest Fly region to the Exmouth WA demo scenario.
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[experimental]
+  # No internal services; this is a pure outbound worker.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"  # 256mb is the floor; 512mb gives headroom for the LLM client + MCP subprocess.
+
+[machines]
+  # Keep exactly one machine running at all times. Fly restarts it on crash.
+  min_machines_running = 1
+  auto_stop_machines = false
+  auto_start_machines = false

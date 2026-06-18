@@ -94,6 +94,54 @@
   .demo-wrap { display: grid; grid-template-columns: 280px 1fr; gap: 26px; align-items: start; }
   @media (max-width: 860px) { .demo-wrap { grid-template-columns: 1fr; } }
 
+  /* ── Concept ↔ Live toggle (CSS-only, no framework) ───────────── */
+  .mode-toggle {
+    display: inline-flex; gap: 0; margin-bottom: 18px; border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden; background: #fff;
+  }
+  .mode-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .mode-toggle label {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: .04em;
+    padding: 9px 18px; cursor: pointer; color: var(--ink-dim); transition: all .15s;
+    text-transform: uppercase;
+  }
+  /* The checked radio paints its sibling label as active. */
+  #mode-concept:checked ~ .mode-toggle label[for="mode-concept"],
+  #mode-live:checked ~ .mode-toggle label[for="mode-live"] {
+    background: var(--aubergine); color: #fff;
+  }
+  .mode-caption {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+    margin-bottom: 16px; letter-spacing: .04em;
+  }
+  /* Default: show Concept, hide Live. The radios live before .demo-wrap and
+     .live-panel so these sibling selectors can reach both. */
+  .live-panel { display: none; }
+  #mode-live:checked ~ .demo-wrap { display: none; }
+  #mode-live:checked ~ .live-panel { display: block; }
+
+  .live-panel .live-shots { display: flex; flex-direction: column; gap: 22px; }
+  .live-shot { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 6px 24px -16px #0004; }
+  .live-shot figcaption {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
+    padding: 11px 14px; border-top: 1px solid var(--line); background: var(--cloud);
+  }
+  .live-shot figcaption b { color: var(--ink); }
+  /* Placeholder slot: visible "screenshot pending" state until the real PNG
+     is dropped in. The <img> sits on top; if it 404s the slot shows through. */
+  .shot-slot {
+    position: relative; min-height: 220px; display: flex; align-items: center; justify-content: center;
+    background: repeating-linear-gradient(45deg, #F3EAF4, #F3EAF4 12px, #FBF6FC 12px, #FBF6FC 24px);
+    color: var(--aubergine-soft); font-family: var(--mono); font-size: 13px; text-align: center; padding: 24px;
+  }
+  .shot-slot .pending-tag {
+    display: inline-block; border: 1px dashed var(--aubergine-soft); border-radius: 6px;
+    padding: 10px 16px; background: #ffffffcc; line-height: 1.7;
+  }
+  .shot-slot .pending-tag b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 3px; }
+  .shot-slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+  .shot-slot img[src=""], .shot-slot img:not([src]) { display: none; }
+
   .loop-rail { position: sticky; top: 24px; }
   .loop-rail h3 {
     font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
@@ -317,6 +365,17 @@
   <h2>Talk to it like a neighbour</h2>
   <p class="sec-intro">Pick a message below and watch the agent work its loop. Everything it surfaces is <b>sourced and timestamped</b>, and nothing happens without a human pressing the button.</p>
 
+  <!-- Concept ↔ Live toggle. The radios are siblings of .demo-wrap and
+       .live-panel so the CSS ~ selectors can swap them. Concept = the explainer
+       animation (default); Live = real Slack screenshots (proof it shipped). -->
+  <input type="radio" name="demo-mode" id="mode-concept" checked>
+  <input type="radio" name="demo-mode" id="mode-live">
+  <div class="mode-toggle">
+    <label for="mode-concept">Concept</label>
+    <label for="mode-live">Live</label>
+  </div>
+  <div class="mode-caption">Concept animation · Live = real Slack</div>
+
   <div class="demo-wrap">
     <aside class="loop-rail">
       <h3>The agent loop</h3>
@@ -349,6 +408,47 @@
           <button class="prompt" data-scn="clarify"><span class="tag">multi-turn · real exchange</span>We need baby formula in Exmouth town</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Live panel: REAL Slack screenshots (proof the agent shipped). Built as a
+       scaffold with clearly-marked PLACEHOLDER slots + a visible "screenshot
+       pending" state so the page is valid before the real PNGs are dropped into
+       docs/site/img/. NOT a re-rendered "realistic" mockup — the Live side is real
+       screenshots only. Each <img> overlays its slot; until the PNG exists the
+       slot's pending tag shows through. -->
+  <div class="live-panel">
+    <div class="live-shots">
+      <figure class="live-shot">
+        <div class="shot-slot">
+          <!-- onerror hides the broken-image icon so the "screenshot pending"
+               state shows through until the real PNG is dropped in. -->
+          <img src="img/live-need.png" onerror="this.style.display='none'" alt="Real Slack screenshot: a resident posts a water + generator need in the crisis channel; the agent replies with a workspace match card and an Official information water-point card, each sourced and UTC-stamped.">
+          <span class="pending-tag"><b>Screenshot pending</b>img/live-need.png — resident need → workspace match + Official information card</span>
+        </div>
+        <figcaption><b>Need → matches + official card.</b> Workspace offer (🟩) plus the relevant Official information card (🟦), each sourced and UTC-stamped, with the human-confirm button.</figcaption>
+      </figure>
+      <figure class="live-shot">
+        <div class="shot-slot">
+          <img src="img/live-safety.png" onerror="this.style.display='none'" alt="Real Slack screenshot: a resident asks if the road to Learmonth is safe; the agent refuses to judge safety and surfaces the road-closure advisory card, sourced and UTC-stamped.">
+          <span class="pending-tag"><b>Screenshot pending</b>img/live-safety.png — "is the road safe?" → refusal + road-closure advisory card</span>
+        </div>
+        <figcaption><b>Safety question → refusal + advisory.</b> The agent says it can't judge safety, then surfaces the road-closure advisory card (🟥) verbatim — no safety assertion.</figcaption>
+      </figure>
+      <figure class="live-shot">
+        <div class="shot-slot">
+          <img src="img/live-board.png" onerror="this.style.display='none'" alt="Real Slack screenshot: the coordinator board Canvas showing community cases grouped by status, the activity log, and the official Situation section.">
+          <span class="pending-tag"><b>Screenshot pending</b>img/live-board.png — coordinator board Canvas (cases + activity log + situation)</span>
+        </div>
+        <figcaption><b>Coordinator board.</b> The live Canvas: cases by status, the human-confirmed activity log, and the official Situation section.</figcaption>
+      </figure>
+      <figure class="live-shot">
+        <div class="shot-slot">
+          <img src="img/app-home.png" onerror="this.style.display='none'" alt="Real Slack screenshot: the branded App Home tab — what the agent does, how to use it, the human-confirms note, and a live official situation snapshot.">
+          <span class="pending-tag"><b>Screenshot pending</b>img/app-home.png — branded App Home dashboard</span>
+        </div>
+        <figcaption><b>Branded App Home.</b> What it does, how to use it, the human-confirms note, and a live situation snapshot — each row sourced and verify-noted.</figcaption>
+      </figure>
     </div>
   </div>
 </section>
@@ -502,17 +602,27 @@
         <div class="t ok">13 live-found bugs fixed during sandbox verification</div>
       </div>
     </div>
+    <div class="log-item done">
+      <div class="week">Week 3 · done — same day as W1/W2</div><h4>MCP + actions</h4>
+      <div class="tasks">
+        <div class="t ok">009 — mock MCP servers (FastMCP): road closures, evac centres, official advice; degraded feeds explicit</div>
+        <div class="t ok">010 — Connect / Mark resolved / Not relevant buttons; group-DM intro; audit trail</div>
+        <div class="t ok">008 — match-card visual parity (parse fields, rank labels, sourcing + buttons)</div>
+        <div class="t ok">passive channel listening + recall-quality fixes (echo/dismissal/twin dedup)</div>
+      </div>
+    </div>
+    <div class="log-item done">
+      <div class="week">Week 4 · done</div><h4>Polish + safety</h4>
+      <div class="tasks">
+        <div class="t ok">coordinator Canvas board (open → connected → resolved) + humanized audit log + situation section</div>
+        <div class="t ok">board is the channel's permanent "Community Cases" tab; survives restarts; fills from history</div>
+        <div class="t ok">official MCP results as sourced cards (🟦/🟥) in the reply; explicit safety refusal</div>
+        <div class="t ok">info-vs-resource routing; crisis suggested prompts + branded App Home dashboard</div>
+      </div>
+    </div>
     <div class="log-item now">
-      <div class="week">Week 3 · next</div><h4>MCP + actions</h4>
-      <p>Mock MCP servers (road closures, evac centres) and the Connect / Resolve / Escalate buttons, end-to-end.</p>
-    </div>
-    <div class="log-item">
-      <div class="week">Week 4</div><h4>Polish + safety</h4>
-      <p>Coordinator Canvas, audit log, graceful degraded-state UX, Exmouth scenario data seeded.</p>
-    </div>
-    <div class="log-item">
-      <div class="week">Week 5</div><h4>Demo + submit</h4>
-      <p>3-minute video, final diagram, judge access to the sandbox, Devpost submission.</p>
+      <div class="week">Week 5 · in progress</div><h4>Demo + submit</h4>
+      <p>Deploy is push-button (free GCE e2-micro or Fly, one image); the Devpost write-up is drafted and the live screenshots are in. Remaining: record the 3-minute video, grant judges sandbox access, submit on Devpost.</p>
     </div>
   </div>
 </section>
@@ -589,19 +699,19 @@ const SCN = {
       await sleep(900);
       box.insertAdjacentHTML("beforeend", `
         <div class="card">
-          <div class="rank"><b>match 1</b> · workspace · Real-Time Search</div>
-          <div class="what">"Spare 2kW generator in town, can lend" — posted by Mara V.</div>
-          <div class="src"><span>source: @mara · #offers</span><span>posted 2h ago</span><span>Contact: @mara</span></div>
+          <div class="rank">🟩 <b>match 1</b> · workspace · Real-Time Search</div>
+          <div class="what">"Spare 2kW generator in town, can lend" — posted by a neighbour</div>
+          <div class="src"><span>source: @neighbour · #exmouth-mutual-aid</span><span>posted 2026-03-15 04:20 UTC</span><span>Contact: @neighbour</span></div>
           <div class="verify">verify before relying on this</div>
           <div class="actions"><button class="mini-btn primary" onclick="confirmAction(this)">Connect me</button><button class="mini-btn" onclick="confirmAction(this)">Not relevant</button></div>
         </div>
         <div class="card official">
-          <div class="rank"><b>match 2</b> · official · MCP feed</div>
+          <div class="rank">🟦 <b>official</b> · info · MCP feed</div>
           <div class="what">Water point open — Exmouth Recreation Centre, bring containers</div>
-          <div class="src"><span>feed: DFES community notices</span><span>fetched 14 min ago</span></div>
+          <div class="src"><span>feed: evac_centres</span><span>fetched 2026-03-15 06:30 UTC</span></div>
           <div class="verify">verify before relying on this</div>
         </div>
-        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">Next step is yours: tap <b style="color:var(--green)">Connect me</b> and I'll open a DM with Mara. I don't connect anyone automatically.</div>`);
+        <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">Next step is yours: tap <b style="color:var(--green)">Connect me</b> and I'll open a DM with the neighbour. I don't connect anyone automatically.</div>`);
       scrollEnd();
     }
   },
@@ -618,9 +728,9 @@ const SCN = {
       await sleep(800);
       box.insertAdjacentHTML("beforeend", `
         <div class="card">
-          <div class="rank"><b>indexed</b> · workspace memory</div>
+          <div class="rank">🟩 <b>indexed</b> · workspace memory</div>
           <div class="what">Offer logged and searchable — when a matching need arrives, the requester is shown your offer and chooses to connect.</div>
-          <div class="src"><span>source: you · this channel</span><span>just now</span></div>
+          <div class="src"><span>source: you · #exmouth-mutual-aid</span><span>2026-03-15 06:32 UTC</span></div>
         </div>
         <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">You'll only be contacted when a human confirms a match.</div>`);
       scrollEnd();
@@ -665,9 +775,9 @@ const SCN = {
       await sleep(850);
       box.insertAdjacentHTML("beforeend", `
         <div class="card warn">
-          <div class="rank"><b style="color:var(--red)">advisory</b> · official · MCP feed</div>
+          <div class="rank">🟥 <b style="color:var(--red)">official · advisory</b> · MCP feed</div>
           <div class="what">Minilya–Exmouth Rd: CLOSED at Yannarie River crossing. Learmonth access road: status under assessment.</div>
-          <div class="src"><span>feed: Main Roads WA closures</span><span>fetched 9 min ago</span></div>
+          <div class="src"><span>feed: road_closures</span><span>fetched 2026-03-15 06:30 UTC</span></div>
           <div class="verify">verify before relying on this — conditions change fast</div>
         </div>
         <div style="margin-top:10px;font-size:13.5px;color:var(--ink-dim)">Check the official source above and your local coordinator before travelling. If this is an emergency, contact emergency services.</div>`);

@@ -1,0 +1,39 @@
+[
+  {
+    "name": "Exmouth Recreation Centre",
+    "address": "Murat Road, Exmouth WA 6707",
+    "status": "OPEN",
+    "capacity": 250,
+    "occupancy": 168,
+    "services": [
+      "Emergency water point",
+      "Bedding and shelter",
+      "Charging stations",
+      "First aid"
+    ],
+    "updated_at": "2026-03-15T05:30:00+00:00"
+  },
+  {
+    "name": "Exmouth District High School Hall",
+    "address": "Maidstone Crescent, Exmouth WA 6707",
+    "status": "OPEN",
+    "capacity": 120,
+    "occupancy": 74,
+    "services": [
+      "Shelter",
+      "Family and pet-friendly area"
+    ],
+    "updated_at": "2026-03-15T04:50:00+00:00"
+  },
+  {
+    "name": "Learmonth Community Hall",
+    "address": "Learmonth WA 6707",
+    "status": "FULL",
+    "capacity": 60,
+    "occupancy": 60,
+    "services": [
+      "Shelter"
+    ],
+    "updated_at": "2026-03-15T02:15:00+00:00"
+  }
+]

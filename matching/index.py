@@ -21,6 +21,7 @@ RTS hits are scored by exactly the same notion of "overlap".
 """
 
 import logging
+import threading
 from uuid import UUID
 
 from entities import Need, Offer, Status
@@ -32,14 +33,22 @@ logger = logging.getLogger(__name__)
 class OfferIndex:
     """A process-local ``dict`` of :class:`~entities.Offer` rows keyed by id.
 
-    Not thread-safe and not durable by design (see the module docstring and
-    ADR-0003). Operations are intentionally minimal: add an offer, look one up,
-    transition its status through the lifecycle, and find the offers whose text
-    overlaps a Need's keywords.
+    Not durable by design (see the module docstring and ADR-0003). Operations are
+    intentionally minimal: add an offer, look one up, transition its status through
+    the lifecycle, and find the offers whose text overlaps a Need's keywords.
+
+    **Thread-safe (task 010).** The status transitions are a read-modify-write
+    (get -> ``model_copy`` -> set) which is *not* atomic under the GIL, and the
+    action-button handlers (Connect / Mark resolved) now mutate the index from
+    Bolt's thread pool. A :class:`threading.Lock` guards every access to the
+    backing dict so concurrent transitions never lose a write. ADR-0003's
+    "threaded dispatch" revisit trigger fired; the lock is the minimal response —
+    supersession (an external store) is not needed for a single-process demo.
     """
 
     def __init__(self) -> None:
         self._offers: dict[UUID, Offer] = {}
+        self._lock = threading.Lock()
 
     def add(self, offer: Offer) -> None:
         """Index ``offer`` under its id.
@@ -48,16 +57,19 @@ class OfferIndex:
         the same Slack message — ids are deterministic, see ``entities.models``)
         overwrites the existing row rather than accumulating a duplicate.
         """
-        self._offers[offer.id] = offer
+        with self._lock:
+            self._offers[offer.id] = offer
         logger.info("Indexed offer %s: %s in %s", offer.id, offer.resource_type, offer.location)
 
     def lookup(self, offer_id: UUID) -> Offer | None:
         """Return the indexed offer for ``offer_id``, or ``None`` if absent."""
-        return self._offers.get(offer_id)
+        with self._lock:
+            return self._offers.get(offer_id)
 
     def all_offers(self) -> list[Offer]:
         """Return every indexed offer (insertion order)."""
-        return list(self._offers.values())
+        with self._lock:
+            return list(self._offers.values())
 
     def mark_matched(self, offer_id: UUID) -> Offer | None:
         """Transition an offer to ``MATCHED``; return it, or ``None`` if absent.
@@ -73,12 +85,15 @@ class OfferIndex:
         return self._set_status(offer_id, Status.RESOLVED)
 
     def _set_status(self, offer_id: UUID, status: Status) -> Offer | None:
-        offer = self._offers.get(offer_id)
-        if offer is None:
-            logger.info("Status transition skipped: offer %s not in index", offer_id)
-            return None
-        updated = offer.model_copy(update={"status": status})
-        self._offers[offer_id] = updated
+        # The whole get -> copy -> set is under the lock: it is a read-modify-write
+        # and button handlers run it concurrently on Bolt's thread pool.
+        with self._lock:
+            offer = self._offers.get(offer_id)
+            if offer is None:
+                logger.info("Status transition skipped: offer %s not in index", offer_id)
+                return None
+            updated = offer.model_copy(update={"status": status})
+            self._offers[offer_id] = updated
         logger.info("Offer %s -> %s", offer_id, status)
         return updated
 
@@ -96,8 +111,13 @@ class OfferIndex:
         keywords = need_keywords(need)
         if not keywords:
             return []
+        # Snapshot the rows under the lock, then score outside it: scoring is pure
+        # CPU work and must not hold the lock (nor iterate a dict another thread
+        # may be mutating, which would raise RuntimeError).
+        with self._lock:
+            offers = list(self._offers.values())
         candidates: list[Offer] = []
-        for offer in self._offers.values():
+        for offer in offers:
             if offer.status is Status.RESOLVED:
                 continue
             offer_tokens = tokenize(f"{offer.resource_type} {offer.location} {offer.availability}")

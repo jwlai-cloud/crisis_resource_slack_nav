@@ -1,6 +1,6 @@
 [project]
 name = "crisis-resource-navigator"
-version = "0.1.0"
+version = "1.0.0"
 description = "Slack agent that matches disaster-community needs to local offers (Real-Time Search) and official resources (MCP), with a human always in the loop."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,10 +15,11 @@ dependencies = [
     "slack-sdk>=3.42",
     "slack-bolt>=1.28",
     "slack-cli-hooks<1.0.0",
-    "pydantic-ai[anthropic,openai]",
+    "pydantic-ai-slim[anthropic,openai,google]",
     "python-dotenv>=1.2",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
+    "fastmcp>=3.4,<4",
 ]
 
 [dependency-groups]
