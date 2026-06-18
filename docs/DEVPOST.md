@@ -110,7 +110,7 @@ image, deployed to a **free-tier GCE e2-micro**). It's lean: ~**224 MiB** RAM un
 load on a 1 GB box (~400 MB always free), because the heavy LLM compute is a remote
 API call — the VM just orchestrates I/O.
 
-**Two genuine MCP server integrations, called on every reply:**
+**Two genuine MCP server integrations, wired as toolsets on every reply:**
 - **Slack's own MCP server** (`mcp.slack.com`, via `MCPServerStreamableHTTP` + the user
   token) — first-party workspace tools.
 - **Our official-directories MCP server** (FastMCP) — run **persistently over HTTP** in
@@ -144,7 +144,7 @@ HTTP round-trip is covered by `tests/integration/mocks/test_server_http.py`.
 
 All three required technologies are **load-bearing** — remove any one and the product
 breaks. The safety posture is real, not cosmetic: the agent will refuse to tell you a
-road is safe, every time, and every claim on screen carries its source. ~510 tests,
+road is safe, every time, and every claim on screen carries its source. ~540 tests,
 zero-warning CI on every change, each guardrail change re-verified.
 
 ## What's next
