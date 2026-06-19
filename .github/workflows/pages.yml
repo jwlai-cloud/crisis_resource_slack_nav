@@ -2,11 +2,12 @@ name: Deploy landing page to GitHub Pages
 
 # Publishes docs/site/ (the static field-guide landing page) to GitHub Pages.
 # One-time: repo Settings -> Pages -> Build and deployment -> Source = "GitHub Actions".
-# After that this runs on every push to dev that touches the page, and on demand.
+# Master-driven: republishes whenever a stage PR merges to master and touches the
+# page (matches the dev->master release model), and on demand via the Actions tab.
 
 on:
   push:
-    branches: [dev]
+    branches: [master]
     paths:
       - "docs/site/**"
       - ".github/workflows/pages.yml"
