@@ -5,9 +5,10 @@
 **Recording principles**
 - The first 60 seconds must be the working product solving the real scenario. No title cards longer than 3 seconds, no architecture talk up front.
 - **Pre-seed + warm up before recording** (so matching has something to find):
-  1. With the agent running (`slack run`), `make seed-demo ARGS=--fresh` — posts the realistic offers + SES/DFES notices; the agent indexes each as it lands (organic indexing, task 031).
-  2. `make board ARGS=--fresh` once so the **Community Cases** tab exists.
-  3. Wait ~60 s so the Real-Time Search index catches up before you post the hero need.
+  1. Confirm the **deployed VM agent is live**. Do **NOT** start a local `slack run` while the VM is up — two agents share the app token and Slack splits events → double replies on camera. One instance only.
+  2. `make seed-demo ARGS=--fresh` — posts the realistic offers + SES/DFES notices; the live VM agent indexes each as it lands (organic indexing).
+  3. The **Community Cases** tab already exists (the VM agent creates it on startup) — just open it. Skip a local `make board ARGS=--fresh`; it can fail on a stale canvas id.
+  4. Wait ~60 s so the Real-Time Search index catches up before you post the hero need.
 - Record the agent on the **native agent surface / the crisis channel** at a clean zoom so Block Kit blocks, sources, and timestamps are legible on a laptop.
 - Speak to the screen action; let the agent's output carry it. Don't narrate the UI.
 
