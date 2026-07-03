@@ -12,7 +12,7 @@ authors = [
 # Runtime deps only. Dev/test go in [dependency-groups].
 # Migrated from the `bolt-python-starter-agent --subdir pydantic-ai` template (W1).
 dependencies = [
-    "slack-sdk>=3.42",
+    "slack-sdk>=3.43.0",
     "slack-bolt>=1.28",
     "slack-cli-hooks<1.0.0",
     "pydantic-ai-slim[anthropic,openai,google]",
