@@ -1,6 +1,8 @@
 # Crisis Resource Navigator — Design Doc
 
-*Slack Agent Builder Challenge · Track: Slack Agent for Good · Target deadline: Jul 13, 2026*
+*Slack Agent Builder Challenge · Track: Slack Agent for Good · Deadline: Jul 13, 2026*
+
+*Status: **shipped as v1.0.0**, deployed always-on in the judging sandbox — [live agent](https://app.slack.com/client/E0BBDPVAA06/C0BBCTGUKU5) · [field-guide page](https://jwlai-cloud.github.io/crisis_resource_slack_nav/) · [code](https://github.com/jwlai-cloud/crisis_resource_slack_nav).*
 
 ---
 
@@ -68,6 +70,8 @@ RTS API  [workspace]     MCP servers  [external]
         Coordinator Canvas + audit log
 ```
 
+**As shipped.** Two real MCP integrations run on every reply: Slack's own MCP server (`mcp.slack.com`, via `MCPServerStreamableHTTP` + the user token) and our official-directories server (FastMCP), the latter kept **warm over HTTP inside the container** so each turn hits a live server instead of a cold subprocess. The agent runs **always-on** on a free-tier GCE e2-micro (Socket Mode = one long-lived outbound worker, ~200 MiB RAM). If an MCP source is unreachable it retries without that toolset and states the degradation explicitly — the official cards still render. The matching index is in-memory and repopulates from channel history on start. **~540 tests, zero-warning CI.** The MCP *data* is simulated (static JSON — live Main Roads WA / DFES feeds aren't public); the *integration* is real.
+
 ## 5. Core user flows
 
 **Resident requests help.** Posts "Family of 4, North Exmouth, no power — need water and a generator." Agent parses, queries RTS (finds a generator offer 2h ago) and MCP (finds the nearest open water point), replies with both, ranked, each sourced. Resident taps **Connect me**, which DMs the offerer. On success, taps **Mark resolved**.
@@ -97,6 +101,8 @@ RTS handles free-text recall over the channel history; the index exists only to 
 | **W5 (Jul 8–13)** | Demo + submit | Record 3-min video (first 60s = the cyclone scenario, need→match→connect); architecture diagram final; write-up; grant sandbox access to the required reviewer emails; submit. |
 
 Buffer is deliberately front-loaded into W1–W2 because sandbox/agent-surface setup is the most likely place to lose time; the mock MCP servers in W3 are intentionally thin.
+
+**Delivered.** All five milestones shipped and were verified live in the sandbox at each step (W2–W4 landed ahead of schedule). The demo runs in a personal Slack Developer **event sandbox** with the agent deployed always-on, so judges can interact with it directly.
 
 ## 8. Demo plan
 
